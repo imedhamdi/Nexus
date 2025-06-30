@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Nexus - Votre Cocon Privé</title>
+    <title>Nexus Chat</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -12,26 +12,28 @@
     <style>
         /* Variables CSS */
         :root {
-            --primary-bg: #0f0e17;
-            --secondary-bg: #1b1a2e;
-            --accent: #ff2e63;
-            --accent-hover: #ff5c8a;
-            --text-primary: #fffffe;
-            --text-secondary: #a7a9be;
-            --message-sent-bg: linear-gradient(135deg, #ff2e63 0%, #ff7b97 100%);
-            --message-received-bg: #2a2d45;
-            --message-system-bg: #1a1a2e;
-            --status-online: #00ff9d;
-            --status-offline: #6c757d;
-            --status-typing: #ffcc00;
-            --glass-bg: rgba(27, 26, 46, 0.7);
+            --bg-dark: #121212;
+            --bg-surface: #1E1E2F;
+            --accent: #FF3366;
+            --accent-hover: #FF5A84;
+            --accent-secondary: #00C8A5;
+            --text-primary: #F5F5F5;
+            --text-secondary: #9CA3AF;
+            --message-sent-bg: linear-gradient(135deg, #FF3366 0%, #FF5A84 100%);
+            --message-received-bg: #2A2D45;
+            --message-system-bg: #1A1A2E;
+            --status-online: #00C8A5;
+            --status-offline: #6C757D;
+            --status-typing: #FFCC00;
+            --glass-bg: rgba(30, 30, 47, 0.7);
             --glass-border: 1px solid rgba(255, 255, 255, 0.1);
             --shadow-md: 0 8px 30px rgba(0, 0, 0, 0.3);
-            --read-receipt: #4fc3f7;
+            --read-receipt: #4FC3F7;
             --ease-fluid: cubic-bezier(0.65, 0, 0.35, 1);
-            --success: #00c853;
-            --error: #ff3d00;
-            --warning: #ff9800;
+            --success: #00C853;
+            --error: #FF3D00;
+            --warning: #FF9800;
+            --radius: 1rem;
         }
 
         /* Reset et styles de base */
@@ -49,7 +51,7 @@
 
         body {
             font-family: 'Inter', sans-serif;
-            background: var(--primary-bg);
+            background: var(--bg-dark);
             color: var(--text-primary);
             height: 100vh;
             height: 100dvh;
@@ -64,12 +66,12 @@
             align-items: center;
             height: 100%;
             padding: 2rem;
-            background: linear-gradient(135deg, var(--primary-bg) 0%, var(--secondary-bg) 100%);
+            background: linear-gradient(135deg, var(--bg-dark) 0%, var(--bg-surface) 100%);
         }
 
         .auth-card {
-            background: var(--secondary-bg);
-            border-radius: 1rem;
+            background: var(--bg-surface);
+            border-radius: var(--radius);
             padding: 2rem;
             width: 100%;
             max-width: 400px;
@@ -103,7 +105,7 @@
 
         .form-input {
             padding: 0.75rem 1rem;
-            border-radius: 0.5rem;
+            border-radius: var(--radius);
             border: 1px solid rgba(255, 255, 255, 0.1);
             background: rgba(255, 255, 255, 0.05);
             color: var(--text-primary);
@@ -123,7 +125,7 @@
             color: white;
             border: none;
             padding: 0.75rem;
-            border-radius: 0.5rem;
+            border-radius: var(--radius);
             font-size: 1rem;
             font-weight: 600;
             cursor: pointer;
@@ -136,7 +138,7 @@
         }
 
         .auth-btn:disabled {
-            background: var(--secondary-bg);
+            background: var(--bg-surface);
             opacity: 0.5;
             cursor: not-allowed;
         }
@@ -172,15 +174,15 @@
             border-radius: 50%;
             object-fit: cover;
             border: 3px solid var(--accent);
-            background: var(--primary-bg);
+            background: var(--bg-dark);
         }
 
         .avatar-upload-label {
-            background: var(--secondary-bg);
+            background: var(--bg-surface);
             color: var(--text-primary);
             border: 1px dashed var(--text-secondary);
             padding: 0.5rem 1rem;
-            border-radius: 0.5rem;
+            border-radius: var(--radius);
             cursor: pointer;
             text-align: center;
             transition: all 0.3s;
@@ -209,13 +211,14 @@
             width: 85vw;
             max-width: 320px;
             height: 100%;
-            background: var(--primary-bg);
+            background: var(--bg-dark);
             z-index: 1000;
             padding: 1rem;
             transition: transform 0.4s var(--ease-fluid);
             display: flex;
             flex-direction: column;
             border-right: var(--glass-border);
+            border-radius: var(--radius);
         }
 
         .sidebar.active {
@@ -369,7 +372,7 @@
             position: absolute;
             bottom: 0;
             right: 0;
-            border: 2px solid var(--primary-bg);
+            border: 2px solid var(--bg-dark);
         }
 
         .online {
@@ -470,7 +473,7 @@
         }
 
         .group-modal .modal-content {
-            background: var(--secondary-bg);
+            background: var(--bg-surface);
             padding: 1.5rem;
             border-radius: 0.5rem;
             width: 90%;
@@ -842,7 +845,7 @@
         }
 
         .toast {
-            background: var(--secondary-bg);
+            background: var(--bg-surface);
             color: white;
             padding: 1rem 1.5rem;
             border-radius: 8px;
@@ -1075,7 +1078,7 @@
 </head>
 
 <body>
-    <div id="auth-container" class="auth-container">
+    <main id="auth-container" class="auth-container" role="main">
         <div class="auth-card" id="login-card">
             <h1 class="auth-title">Connexion à Nexus</h1>
             <form class="auth-form" id="login-form">
@@ -1098,7 +1101,7 @@
                 <div class="avatar-upload">
                     <img id="avatar-preview" class="avatar-preview" src="https://i.pravatar.cc/150" alt="Avatar">
                     <label for="avatar-input" class="avatar-upload-label">Choisir une photo</label>
-                    <input type="file" id="avatar-input" accept="image/*" style="display: none;">
+                    <input type="file" id="avatar-input" accept="image/*" style="display: none;" aria-label="Avatar">
                 </div>
                 <div class="form-group">
                     <label for="register-name" class="form-label">Votre nom</label>
@@ -1116,10 +1119,10 @@
             </form>
             <p class="auth-link">Déjà un compte ? <a href="#" id="show-login">Se connecter</a></p>
         </div>
-    </div>
+    </main>
 
     <div id="app-container" class="hidden">
-        <aside class="sidebar">
+        <aside class="sidebar" aria-label="Liste des discussions">
             <div class="sidebar-header">
                 <h2 class="sidebar-title">Nexus Chat</h2>
                 <button class="close-sidebar-btn"><i class="fas fa-times"></i></button>
@@ -1138,7 +1141,7 @@
                 </div>
             </div>
             
-            <nav class="sidebar-nav">
+            <nav class="sidebar-nav" role="navigation">
                 <a href="#" class="nav-item active">
                     <i class="fas fa-comment-alt"></i>
                     <span>Messages</span>
@@ -1235,9 +1238,9 @@
 
     <div id="toast-container"></div>
 
-    <div id="create-group-modal" class="group-modal hidden">
+    <div id="create-group-modal" class="group-modal hidden" role="dialog" aria-labelledby="group-modal-title">
         <div class="modal-content">
-            <h3>Créer un groupe</h3>
+            <h3 id="group-modal-title">Créer un groupe</h3>
             <form id="create-group-form" class="auth-form">
                 <div class="form-group">
                     <label class="form-label" for="group-name-input">Nom du groupe</label>
