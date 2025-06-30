@@ -22,6 +22,11 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const helmet = require('helmet');
 
+// Configuration des serveurs STUN/TURN pour WebRTC
+const iceServers = process.env.ICE_SERVERS
+  ? JSON.parse(process.env.ICE_SERVERS)
+  : [{ urls: 'stun:stun.l.google.com:19302' }];
+
 // Initialisation de l'application Express
 const app = express();
 const server = http.createServer(app);
@@ -126,12 +131,15 @@ const MessageSchema = new mongoose.Schema({
     type: Boolean, 
     default: false 
   },
-  createdAt: { 
-    type: Date, 
+  createdAt: {
+    type: Date,
     default: Date.now,
-    index: true 
+    index: true
   }
 });
+
+// Index pour accélérer la recherche des messages par participants et date
+MessageSchema.index({ sender: 1, recipient: 1, createdAt: 1 });
 
 const User = mongoose.model('User', UserSchema);
 const Message = mongoose.model('Message', MessageSchema);
@@ -429,11 +437,14 @@ app.post('/api/upload-file', authenticate, upload.single('file'), async (req, re
 
 app.get('/api/messages', authenticate, async (req, res) => {
   try {
-    const { partner } = req.query; // partner est l'ID du correspondant
-    
+    const { partner, page = 1, limit = 50 } = req.query; // partner est l'ID du correspondant
+
     if (!partner) {
       return res.status(400).json({ error: 'Paramètre partner manquant' });
     }
+
+    const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
+    const maxLimit = Math.min(parseInt(limit, 10), 100);
 
     // Récupération des messages entre les deux utilisateurs
     const rawMessages = await Message.find({
@@ -443,7 +454,8 @@ app.get('/api/messages', authenticate, async (req, res) => {
       ]
     })
     .sort({ createdAt: 1 })
-    .limit(100)
+    .skip(skip)
+    .limit(maxLimit)
     .populate('sender', 'username');
 
     const messages = rawMessages.map(m => ({
@@ -461,6 +473,11 @@ app.get('/api/messages', authenticate, async (req, res) => {
     console.error('[GET MESSAGES] Erreur:', err);
     res.status(500).json({ error: 'Erreur lors de la récupération des messages' });
   }
+});
+
+// Renvoyer la configuration WebRTC côté client
+app.get('/api/webrtc-config', (req, res) => {
+  res.json({ iceServers });
 });
 
 // Serveur de fichiers statiques

@@ -1247,6 +1247,7 @@
                 peerConnection: null,
                 localStream: null,
                 remoteStream: null,
+                iceServers: null,
                 isCalling: false,
                 isInCall: false,
                 callType: null, // 'audio' or 'video'
@@ -1441,8 +1442,11 @@
             }
             
             // Démarrage de l'application
-            function startApp(userData) {
+            async function startApp(userData) {
                 AppState.user = userData;
+
+                // Charger la configuration WebRTC
+                await loadWebRTCConfig();
                 
                 // Mettre à jour l'interface utilisateur
                 updateUserUI();
@@ -1460,12 +1464,25 @@
             
             function updateUserUI() {
                 if (!AppState.user) return;
-                
+
                 DOM.userName.textContent = AppState.user.name;
                 DOM.userUsername.textContent = `@${AppState.user.username}`;
                 
                 if (AppState.user.avatar) {
                     DOM.userAvatar.src = AppState.user.avatar;
+                }
+            }
+
+            async function loadWebRTCConfig() {
+                try {
+                    const response = await fetch(`${API_BASE_URL}/api/webrtc-config`);
+                    if (response.ok) {
+                        const data = await response.json();
+                        AppState.iceServers = data.iceServers;
+                    }
+                } catch (err) {
+                    console.error('WebRTC config error:', err);
+                    AppState.iceServers = [{ urls: 'stun:stun.l.google.com:19302' }];
                 }
             }
             
@@ -1674,7 +1691,7 @@
             async function loadMessages(partnerId) {
                 try {
                     const token = localStorage.getItem('nexusToken');
-                    const response = await fetch(`${API_BASE_URL}/api/messages?partner=${partnerId}`, {
+                    const response = await fetch(`${API_BASE_URL}/api/messages?partner=${partnerId}&limit=${MESSAGE_LIMIT}`, {
                         headers: { 'Authorization': `Bearer ${token}` }
                     });
                     const data = await response.json();
@@ -2144,8 +2161,7 @@
             }
             
             async function initWebRTC(isAnswer = false) {
-                // Configuration WebRTC simplifiée - en production, on utiliserait STUN/TURN servers
-                const configuration = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+                const configuration = { iceServers: AppState.iceServers || [{ urls: 'stun:stun.l.google.com:19302' }] };
                 
                 AppState.peerConnection = new RTCPeerConnection(configuration);
                 
