@@ -1531,6 +1531,14 @@
                 socket.on('new-message', (message) => {
                     handleNewMessage(message);
                 });
+
+                socket.on('message-edited', (data) => {
+                    handleMessageEdited(data);
+                });
+
+                socket.on('message-deleted', (data) => {
+                    handleMessageDeleted(data);
+                });
                 
                 socket.on('typing', (data) => {
                     handleTypingIndicator(data);
@@ -1761,12 +1769,12 @@
                 const isSent = message.sender === AppState.user.username;
                 const messageEl = document.createElement('div');
                 messageEl.className = `message ${isSent ? 'sent' : 'received'}`;
-                
-                let contentHtml = message.content;
-                
-                if (message.type === 'image') {
+
+                let contentHtml = message.deleted ? '<em>Message supprimé</em>' : message.content;
+
+                if (!message.deleted && message.type === 'image') {
                     contentHtml += `<img class="msg-image" src="${message.fileUrl}" alt="Image partagée">`;
-                } else if (message.type === 'file') {
+                } else if (!message.deleted && message.type === 'file') {
                     contentHtml += `
                         <a href="${message.fileUrl}" class="msg-file" download>
                             <i class="fas fa-file-pdf"></i>
@@ -1777,17 +1785,37 @@
                         </a>
                     `;
                 }
-                
+
+                let actionsHtml = '';
+                if (isSent && !message.deleted) {
+                    actionsHtml = `
+                        <span class="msg-actions">
+                            <button class="edit-msg" data-id="${message.id}"><i class="fas fa-pen"></i></button>
+                            <button class="delete-msg" data-id="${message.id}"><i class="fas fa-trash"></i></button>
+                        </span>`;
+                }
+
                 messageEl.innerHTML = `
                     <div class="message-wrapper">
-                        <div class="message-content">${contentHtml}</div>
+                        <div class="message-content">${contentHtml} ${actionsHtml}</div>
                         <div class="message-info">
                             <span class="timestamp">${formatTime(new Date(message.createdAt))}</span>
+                            ${message.edited ? '<span class="edited">(modifié)</span>' : ''}
                             ${isSent ? `<i class="fas fa-check read-receipt ${message.read ? 'read' : ''}"></i>` : ''}
                         </div>
                     </div>
                 `;
-                
+
+                // Actions edit/delete
+                const editBtn = messageEl.querySelector('.edit-msg');
+                if (editBtn) {
+                    editBtn.addEventListener('click', () => editMessage(message));
+                }
+                const deleteBtn = messageEl.querySelector('.delete-msg');
+                if (deleteBtn) {
+                    deleteBtn.addEventListener('click', () => deleteMessage(message.id));
+                }
+
                 return messageEl;
             }
             
@@ -1981,6 +2009,77 @@
                 if (contact && contact.id === AppState.currentChat) {
                     contact.typing = false;
                     updateChatPartnerStatus(contact);
+                }
+            }
+
+            function handleMessageEdited(data) {
+                const msgs = AppState.messages[AppState.currentChat];
+                if (!msgs) return;
+                const msg = msgs.find(m => m.id === data.id);
+                if (msg) {
+                    msg.content = data.content;
+                    msg.edited = data.edited;
+                    renderMessages(msgs);
+                }
+            }
+
+            function handleMessageDeleted(data) {
+                const msgs = AppState.messages[AppState.currentChat];
+                if (!msgs) return;
+                const msg = msgs.find(m => m.id === data.id);
+                if (msg) {
+                    msg.deleted = true;
+                    renderMessages(msgs);
+                }
+            }
+
+            async function editMessage(message) {
+                const newContent = prompt('Modifier le message', message.content);
+                if (newContent === null || newContent.trim() === '') return;
+                try {
+                    const token = localStorage.getItem('nexusToken');
+                    const response = await fetch(`${API_BASE_URL}/api/messages/${message.id}`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify({ content: newContent })
+                    });
+                    if (response.ok) {
+                        message.content = newContent;
+                        message.edited = true;
+                        renderMessages(AppState.messages[AppState.currentChat]);
+                    } else {
+                        showToast('Échec de la modification', 'error');
+                    }
+                } catch (err) {
+                    console.error('Edit message error:', err);
+                    showToast('Erreur lors de la modification', 'error');
+                }
+            }
+
+            async function deleteMessage(id) {
+                if (!confirm('Supprimer ce message ?')) return;
+                try {
+                    const token = localStorage.getItem('nexusToken');
+                    const response = await fetch(`${API_BASE_URL}/api/messages/${id}`, {
+                        method: 'DELETE',
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    if (response.ok) {
+                        const msgs = AppState.messages[AppState.currentChat];
+                        const msg = msgs.find(m => m.id === id);
+                        if (msg) {
+                            msg.deleted = true;
+                        }
+                        renderMessages(msgs);
+                    } else {
+                        showToast('Échec de la suppression', 'error');
+                    }
+                } catch (err) {
+                    console.error('Delete message error:', err);
+                    showToast('Erreur lors de la suppression', 'error');
                 }
             }
             

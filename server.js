@@ -31,6 +31,9 @@ const iceServers = process.env.ICE_SERVERS
 const app = express();
 const server = http.createServer(app);
 
+// Liste des utilisateurs connectés (pour Socket.io)
+const connectedUsers = {};
+
 // Configuration des middlewares
 app.use(express.json());
 app.use(cors({
@@ -127,9 +130,23 @@ const MessageSchema = new mongoose.Schema({
   fileUrl: { 
     type: String 
   },
-  read: { 
-    type: Boolean, 
-    default: false 
+  read: {
+    type: Boolean,
+    default: false
+  },
+  edited: {
+    type: Boolean,
+    default: false
+  },
+  editHistory: [
+    {
+      content: String,
+      editedAt: Date
+    }
+  ],
+  deleted: {
+    type: Boolean,
+    default: false
   },
   createdAt: {
     type: Date,
@@ -465,13 +482,84 @@ app.get('/api/messages', authenticate, async (req, res) => {
       type: m.type,
       fileUrl: m.fileUrl,
       createdAt: m.createdAt,
-      read: m.read
+      read: m.read,
+      edited: m.edited,
+      deleted: m.deleted
     }));
 
     res.json(messages);
   } catch (err) {
     console.error('[GET MESSAGES] Erreur:', err);
     res.status(500).json({ error: 'Erreur lors de la récupération des messages' });
+  }
+});
+
+// Modifier un message existant
+app.put('/api/messages/:id', authenticate, async (req, res) => {
+  try {
+    const { content } = req.body;
+    if (!content) {
+      return res.status(400).json({ error: 'Contenu manquant' });
+    }
+
+    const message = await Message.findById(req.params.id);
+    if (!message) {
+      return res.status(404).json({ error: 'Message non trouvé' });
+    }
+
+    if (!message.sender.equals(req.user._id)) {
+      return res.status(403).json({ error: 'Action non autorisée' });
+    }
+
+    message.editHistory.push({ content: message.content, editedAt: new Date() });
+    message.content = content;
+    message.edited = true;
+    await message.save();
+
+    const recipientUser = await User.findById(message.recipient);
+    const recipientSocketId = connectedUsers[recipientUser.username];
+    const senderSocketId = connectedUsers[req.user.username];
+    const payload = {
+      id: message._id,
+      content: message.content,
+      edited: message.edited
+    };
+    if (recipientSocketId) io.to(recipientSocketId).emit('message-edited', payload);
+    if (senderSocketId) io.to(senderSocketId).emit('message-edited', payload);
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[EDIT MESSAGE] Erreur:', err);
+    res.status(500).json({ error: 'Erreur lors de la modification du message' });
+  }
+});
+
+// Supprimer un message (soft delete)
+app.delete('/api/messages/:id', authenticate, async (req, res) => {
+  try {
+    const message = await Message.findById(req.params.id);
+    if (!message) {
+      return res.status(404).json({ error: 'Message non trouvé' });
+    }
+
+    if (!message.sender.equals(req.user._id)) {
+      return res.status(403).json({ error: 'Action non autorisée' });
+    }
+
+    message.deleted = true;
+    await message.save();
+
+    const recipientUser = await User.findById(message.recipient);
+    const recipientSocketId = connectedUsers[recipientUser.username];
+    const senderSocketId = connectedUsers[req.user.username];
+    const payload = { id: message._id };
+    if (recipientSocketId) io.to(recipientSocketId).emit('message-deleted', payload);
+    if (senderSocketId) io.to(senderSocketId).emit('message-deleted', payload);
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[DELETE MESSAGE] Erreur:', err);
+    res.status(500).json({ error: 'Erreur lors de la suppression du message' });
   }
 });
 
@@ -485,7 +573,6 @@ app.use('/uploads', express.static(uploadsDir));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Gestion des connexions Socket.io
-const connectedUsers = {};
 
 io.on('connection', (socket) => {
   console.log(`[SOCKET] ${socket.user.username} connecté (ID: ${socket.id})`);
