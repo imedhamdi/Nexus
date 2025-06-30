@@ -4,6 +4,12 @@
  */
 
 require('dotenv').config();
+
+// Vérification des variables d'environnement obligatoires
+if (!process.env.MONGODB_URI || !process.env.JWT_SECRET) {
+  console.error('MONGODB_URI et JWT_SECRET doivent être définis dans le fichier .env');
+  process.exit(1);
+}
 const express = require('express');
 const http = require('http');
 const path = require('path');
@@ -22,7 +28,9 @@ const server = http.createServer(app);
 
 // Configuration des middlewares
 app.use(express.json());
-app.use(cors());
+app.use(cors({
+  origin: process.env.FRONTEND_URL,
+}));
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -40,18 +48,15 @@ app.use(helmet({
 // Configuration de Socket.io
 const io = new Server(server, {
   cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
+    origin: process.env.FRONTEND_URL,
+    methods: ["GET", "POST"],
   }
 });
 
 // Connexion à MongoDB avec gestion d'erreur
 const connectDB = async () => {
   try {
-    await mongoose.connect(process.env.MONGODB_URI || 'mongodb+srv://imedhamdi007:imed25516242@api-nodejs.lpnpgx4.mongodb.net/?retryWrites=true&w=majority&appName=API-NodeJS', {
-      useNewUrlParser: true,
-      useUnifiedTopology: true
-    });
+    await mongoose.connect(process.env.MONGODB_URI);
     console.log('[MONGODB] Connecté avec succès');
   } catch (err) {
     console.error('[MONGODB] Erreur de connexion:', err.message);
@@ -94,13 +99,13 @@ const UserSchema = new mongoose.Schema({
 });
 
 const MessageSchema = new mongoose.Schema({
-  sender: { 
-    type: String, 
+  sender: {
+    type: mongoose.Schema.Types.ObjectId,
     required: true,
     ref: 'User'
   },
-  recipient: { 
-    type: String, 
+  recipient: {
+    type: mongoose.Schema.Types.ObjectId,
     required: true,
     ref: 'User'
   },
@@ -188,7 +193,7 @@ const authenticate = async (req, res, next) => {
       return res.status(401).json({ error: 'Token manquant' });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'nexus-secret');
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const user = await User.findById(decoded.userId).select('-password');
     
     if (!user) {
@@ -213,7 +218,7 @@ io.use(async (socket, next) => {
       return next(new Error('Authentification requise'));
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'nexus-secret');
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const user = await User.findById(decoded.userId).select('-password');
     
     if (!user) {
@@ -262,8 +267,8 @@ app.post('/api/register', async (req, res) => {
     // Génération du token JWT
     const token = jwt.sign(
       { userId: user._id },
-      process.env.JWT_SECRET || 'nexus-secret',
-      { expiresIn: '30d' }
+      process.env.JWT_SECRET,
+      { expiresIn: '24h' }
     );
 
     // Réponse sans le mot de passe
@@ -309,8 +314,8 @@ app.post('/api/login', async (req, res) => {
     // Génération du token JWT
     const token = jwt.sign(
       { userId: user._id },
-      process.env.JWT_SECRET || 'nexus-secret',
-      { expiresIn: '30d' }
+      process.env.JWT_SECRET,
+      { expiresIn: '24h' }
     );
 
     // Réponse sans le mot de passe
@@ -329,6 +334,18 @@ app.post('/api/login', async (req, res) => {
   } catch (err) {
     console.error('[LOGIN] Erreur:', err);
     res.status(500).json({ error: 'Erreur lors de la connexion' });
+  }
+});
+
+// Liste des utilisateurs (contacts)
+app.get('/api/users', authenticate, async (req, res) => {
+  try {
+    const users = await User.find({ _id: { $ne: req.user._id } })
+      .select('_id username name avatar');
+    res.json(users);
+  } catch (err) {
+    console.error('[GET USERS] Erreur:', err);
+    res.status(500).json({ error: 'Erreur lors de la récupération des utilisateurs' });
   }
 });
 
@@ -354,7 +371,7 @@ app.post('/api/upload-avatar', authenticate, upload.single('avatar'), async (req
 
 app.post('/api/upload-file', authenticate, upload.single('file'), async (req, res) => {
   try {
-    const { recipient } = req.body;
+    const { recipient } = req.body; // recipient est l'ID du destinataire
     
     if (!recipient) {
       return res.status(400).json({ error: 'Destinataire manquant' });
@@ -365,7 +382,7 @@ app.post('/api/upload-file', authenticate, upload.single('file'), async (req, re
     }
 
     // Vérification que le destinataire existe
-    const recipientUser = await User.findOne({ username: recipient });
+    const recipientUser = await User.findById(recipient);
     if (!recipientUser) {
       return res.status(404).json({ error: 'Destinataire non trouvé' });
     }
@@ -376,20 +393,34 @@ app.post('/api/upload-file', authenticate, upload.single('file'), async (req, re
 
     // Création du message
     const message = new Message({
-      sender: req.user.username,
-      recipient,
+      sender: req.user._id,
+      recipient: recipientUser._id,
       content: req.file.originalname,
       type: fileType,
       fileUrl
     });
     await message.save();
 
-    res.json({ 
-      success: true, 
-      url: fileUrl,
-      messageId: message._id,
-      type: fileType
-    });
+    // Emission en temps réel pour l'expéditeur et le destinataire
+    const recipientSocketId = connectedUsers[recipientUser.username];
+    const senderSocketId = connectedUsers[req.user.username];
+
+    const payload = {
+      id: message._id,
+      sender: req.user.username,
+      senderName: req.user.name,
+      senderAvatar: req.user.avatar,
+      content: req.file.originalname,
+      type: fileType,
+      fileUrl,
+      createdAt: message.createdAt,
+      read: false
+    };
+
+    if (recipientSocketId) io.to(recipientSocketId).emit('new-message', payload);
+    if (senderSocketId) io.to(senderSocketId).emit('new-message', payload);
+
+    res.status(200).json({ success: true });
   } catch (err) {
     console.error('[UPLOAD FILE] Erreur:', err);
     res.status(500).json({ error: 'Erreur lors de l\'upload du fichier' });
@@ -398,21 +429,32 @@ app.post('/api/upload-file', authenticate, upload.single('file'), async (req, re
 
 app.get('/api/messages', authenticate, async (req, res) => {
   try {
-    const { partner } = req.query;
+    const { partner } = req.query; // partner est l'ID du correspondant
     
     if (!partner) {
       return res.status(400).json({ error: 'Paramètre partner manquant' });
     }
 
     // Récupération des messages entre les deux utilisateurs
-    const messages = await Message.find({
+    const rawMessages = await Message.find({
       $or: [
-        { sender: req.user.username, recipient: partner },
-        { sender: partner, recipient: req.user.username }
+        { sender: req.user._id, recipient: partner },
+        { sender: partner, recipient: req.user._id }
       ]
     })
     .sort({ createdAt: 1 })
-    .limit(100); // Limite pour éviter de surcharger
+    .limit(100)
+    .populate('sender', 'username');
+
+    const messages = rawMessages.map(m => ({
+      id: m._id,
+      sender: m.sender.username,
+      content: m.content,
+      type: m.type,
+      fileUrl: m.fileUrl,
+      createdAt: m.createdAt,
+      read: m.read
+    }));
 
     res.json(messages);
   } catch (err) {
@@ -451,34 +493,35 @@ io.on('connection', (socket) => {
       }
 
       // Vérification que le destinataire existe
-      const recipientUser = await User.findOne({ username: recipient });
+      const recipientUser = await User.findById(recipient);
       if (!recipientUser) {
         return callback({ success: false, error: 'Destinataire non trouvé' });
       }
 
       // Création et sauvegarde du message
       const message = new Message({
-        sender: socket.user.username,
-        recipient,
+        sender: socket.user.id,
+        recipient: recipientUser._id,
         content,
         type
       });
       await message.save();
 
       // Envoi en temps réel si le destinataire est connecté
-      const recipientSocketId = connectedUsers[recipient];
-      if (recipientSocketId) {
-        io.to(recipientSocketId).emit('new-message', {
-          id: message._id,
-          sender: socket.user.username,
-          senderName: socket.user.name,
-          senderAvatar: socket.user.avatar,
-          content,
-          type,
-          createdAt: message.createdAt,
-          read: false
-        });
-      }
+      const recipientSocketId = connectedUsers[recipientUser.username];
+      const senderSocketId = connectedUsers[socket.user.username];
+      const payload = {
+        id: message._id,
+        sender: socket.user.username,
+        senderName: socket.user.name,
+        senderAvatar: socket.user.avatar,
+        content,
+        type,
+        createdAt: message.createdAt,
+        read: false
+      };
+      if (recipientSocketId) io.to(recipientSocketId).emit('new-message', payload);
+      if (senderSocketId) io.to(senderSocketId).emit('new-message', payload);
 
       callback({ 
         success: true, 
@@ -540,7 +583,7 @@ io.on('connection', (socket) => {
   socket.on('mark-messages-read', async ({ sender }, callback) => {
     try {
       await Message.updateMany(
-        { sender, recipient: socket.user.username, read: false },
+        { sender, recipient: socket.user.id, read: false },
         { $set: { read: true } }
       );
       callback({ success: true });

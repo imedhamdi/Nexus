@@ -1219,6 +1219,7 @@
             <footer class="chat-input-area">
                 <form id="chat-form">
                     <button type="button" class="attach-btn"><i class="fas fa-paperclip"></i></button>
+                    <input type="file" id="file-input" class="hidden">
                     <textarea id="message-input" placeholder="Écrivez un message..." rows="1"></textarea>
                     <button type="submit" class="send-btn" disabled><i class="fas fa-paper-plane"></i></button>
                 </form>
@@ -1293,6 +1294,7 @@
                 messageInput: document.getElementById('message-input'),
                 sendBtn: document.querySelector('.send-btn'),
                 attachBtn: document.querySelector('.attach-btn'),
+                fileInput: document.getElementById('file-input'),
                 
                 // User info
                 userAvatar: document.getElementById('user-avatar'),
@@ -1408,9 +1410,9 @@
                 DOM.contactsList.addEventListener('click', (e) => {
                     const contactEl = e.target.closest('.contact');
                     if (contactEl) {
-                        const username = contactEl.dataset.username;
-                        if (username) {
-                            switchChat(username);
+                        const id = contactEl.dataset.id;
+                        if (id) {
+                            switchChat(id);
                         }
                     }
                 });
@@ -1637,45 +1639,28 @@
             // Gestion des contacts
             async function loadContacts() {
                 try {
-                    // En production, on chargerait depuis l'API
-                    // Simulons des données pour le prototype
-                    const mockContacts = [
-                        {
-                            username: 'janesmith',
-                            name: 'Jane Smith',
-                            avatar: 'https://i.pravatar.cc/150?img=3',
-                            lastMessage: 'Salut, comment ça va ?',
-                            time: '12:30',
-                            unread: 3,
-                            online: true
-                        },
-                        {
-                            username: 'mikejohnson',
-                            name: 'Mike Johnson',
-                            avatar: 'https://i.pravatar.cc/150?img=5',
-                            lastMessage: 'On se voit demain !',
-                            time: 'Hier',
-                            unread: 0,
-                            online: false
-                        },
-                        {
-                            username: 'sarahwilliams',
-                            name: 'Sarah Williams',
-                            avatar: 'https://i.pravatar.cc/150?img=8',
-                            lastMessage: 'Est en train d\'écrire...',
-                            time: '11:45',
-                            unread: 0,
-                            online: true,
-                            typing: true
-                        }
-                    ];
-                    
-                    AppState.contacts = mockContacts;
+                    const token = localStorage.getItem('nexusToken');
+                    const response = await fetch(`${API_BASE_URL}/api/users`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    const data = await response.json();
+                    if (!response.ok) throw new Error('API error');
+
+                    AppState.contacts = data.map(u => ({
+                        id: u._id,
+                        username: u.username,
+                        name: u.name,
+                        avatar: u.avatar,
+                        lastMessage: '',
+                        time: '',
+                        unread: 0,
+                        online: false
+                    }));
+
                     renderContacts();
-                    
-                    // Sélectionner le premier contact par défaut
-                    if (mockContacts.length > 0) {
-                        switchChat(mockContacts[0].username);
+
+                    if (AppState.contacts.length > 0) {
+                        switchChat(AppState.contacts[0].id);
                     }
                 } catch (err) {
                     console.error('Error loading contacts:', err);
@@ -1689,9 +1674,9 @@
                 AppState.contacts.forEach(contact => {
                     const contactEl = document.createElement('div');
                     contactEl.className = 'contact';
-                    contactEl.dataset.username = contact.username;
-                    
-                    if (AppState.currentChat === contact.username) {
+                    contactEl.dataset.id = contact.id;
+
+                    if (AppState.currentChat === contact.id) {
                         contactEl.classList.add('active');
                     }
                     
@@ -1721,7 +1706,7 @@
                 
                 // Mettre à jour le statut du contact actuel
                 if (AppState.currentChat) {
-                    const currentContact = AppState.contacts.find(c => c.username === AppState.currentChat);
+                    const currentContact = AppState.contacts.find(c => c.id === AppState.currentChat);
                     if (currentContact) {
                         updateChatPartnerStatus(currentContact);
                     }
@@ -1729,14 +1714,14 @@
             }
             
             // Gestion du chat
-            function switchChat(username) {
-                if (AppState.currentChat === username) return;
-                
+            function switchChat(id) {
+                if (AppState.currentChat === id) return;
+
                 // Mettre à jour l'état
-                AppState.currentChat = username;
-                
+                AppState.currentChat = id;
+
                 // Mettre à jour l'interface
-                const contact = AppState.contacts.find(c => c.username === username);
+                const contact = AppState.contacts.find(c => c.id === id);
                 if (contact) {
                     updateChatPartnerUI(contact);
                     
@@ -1748,7 +1733,7 @@
                 }
                 
                 // Charger les messages
-                loadMessages(username);
+                loadMessages(id);
             }
             
             function updateChatPartnerUI(contact) {
@@ -1776,58 +1761,17 @@
                 }
             }
             
-            async function loadMessages(username) {
+            async function loadMessages(partnerId) {
                 try {
-                    // En production, on chargerait depuis l'API
-                    // Simulons des données pour le prototype
-                    const mockMessages = [
-                        {
-                            id: '1',
-                            sender: 'janesmith',
-                            content: 'Salut ! Comment ça va ?',
-                            type: 'text',
-                            createdAt: new Date(Date.now() - 3600000),
-                            read: true
-                        },
-                        {
-                            id: '2',
-                            sender: AppState.user.username,
-                            content: 'Ça va bien merci ! Et toi ?',
-                            type: 'text',
-                            createdAt: new Date(Date.now() - 3500000),
-                            read: true
-                        },
-                        {
-                            id: '3',
-                            sender: 'janesmith',
-                            content: 'Super aussi ! Tu as vu cette photo ?',
-                            type: 'image',
-                            fileUrl: 'https://picsum.photos/400/300',
-                            createdAt: new Date(Date.now() - 3400000),
-                            read: true
-                        },
-                        {
-                            id: '4',
-                            sender: AppState.user.username,
-                            content: 'Oui, magnifique ! Voici le document dont je t\'ai parlé :',
-                            type: 'file',
-                            fileUrl: '#',
-                            fileInfo: {
-                                name: 'Document-important.pdf',
-                                size: '2.4 MB'
-                            },
-                            createdAt: new Date(Date.now() - 3300000),
-                            read: false
-                        }
-                    ];
-                    
-                    // Stocker les messages dans l'état
-                    AppState.messages[username] = mockMessages;
-                    
-                    // Afficher les messages
-                    renderMessages(mockMessages);
-                    
-                    // Faire défiler vers le bas
+                    const token = localStorage.getItem('nexusToken');
+                    const response = await fetch(`${API_BASE_URL}/api/messages?partner=${partnerId}`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    const data = await response.json();
+                    if (!response.ok) throw new Error('API error');
+
+                    AppState.messages[partnerId] = data;
+                    renderMessages(data);
                     scrollToBottom();
                 } catch (err) {
                     console.error('Error loading messages:', err);
@@ -2005,9 +1949,31 @@
             }
             
             function handleFileUpload() {
-                // Implémentation simplifiée - en production, on utiliserait un input file caché
-                showToast('Fonctionnalité d\'upload de fichier non implémentée dans ce prototype', 'warning');
+                DOM.fileInput.click();
             }
+
+            DOM.fileInput.addEventListener('change', async (e) => {
+                const file = e.target.files[0];
+                if (!file || !AppState.currentChat) return;
+
+                const token = localStorage.getItem('nexusToken');
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('recipient', AppState.currentChat);
+
+                try {
+                    await fetch(`${API_BASE_URL}/api/upload-file`, {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${token}` },
+                        body: formData
+                    });
+                } catch (err) {
+                    console.error('File upload error:', err);
+                    showToast('Erreur lors de l\'envoi du fichier', 'error');
+                } finally {
+                    e.target.value = '';
+                }
+            });
             
             function handleNewMessage(message) {
                 // Jouer le son de notification
@@ -2015,53 +1981,53 @@
                 
                 // Mettre à jour l'état
                 const sender = message.sender;
-                
-                if (!AppState.messages[sender]) {
-                    AppState.messages[sender] = [];
+                const contact = AppState.contacts.find(c => c.username === sender);
+                const key = contact ? contact.id : sender;
+
+                if (!AppState.messages[key]) {
+                    AppState.messages[key] = [];
                 }
                 
                 // Vérifier si le message existe déjà
-                const exists = AppState.messages[sender].some(m => m.id === message.id);
+                const exists = AppState.messages[key].some(m => m.id === message.id);
                 if (exists) return;
-                
+
                 // Ajouter le message
-                AppState.messages[sender].push(message);
+                AppState.messages[key].push(message);
                 
                 // Mettre à jour le dernier message dans les contacts
-                const contact = AppState.contacts.find(c => c.username === sender);
                 if (contact) {
-                    contact.lastMessage = message.type === 'text' ? message.content : 
+                    contact.lastMessage = message.type === 'text' ? message.content :
                                         message.type === 'image' ? 'Image' : 'Fichier';
                     contact.time = 'Maintenant';
-                    
+
                     // Incrémenter le compteur de messages non lus si ce n'est pas le chat actuel
-                    if (AppState.currentChat !== sender) {
+                    if (AppState.currentChat !== key) {
                         contact.unread = (contact.unread || 0) + 1;
                     }
                 }
                 
                 // Si c'est le chat actif, afficher le message
-                if (AppState.currentChat === sender) {
-                    renderMessages(AppState.messages[sender]);
+                if (AppState.currentChat === key) {
+                    renderMessages(AppState.messages[key]);
                     scrollToBottom();
-                    
+
                     // Marquer comme lu
-                    markMessagesAsRead(sender);
+                    markMessagesAsRead(key);
                 } else {
                     // Mettre à jour la liste des contacts
                     renderContacts();
                 }
             }
             
-            function markMessagesAsRead(sender) {
-                if (!AppState.socket || !sender) return;
-                
-                AppState.socket.emit('mark-messages-read', { sender }, (response) => {
+            function markMessagesAsRead(partnerId) {
+                if (!AppState.socket || !partnerId) return;
+
+                AppState.socket.emit('mark-messages-read', { sender: partnerId }, (response) => {
                     if (response.success) {
-                        // Mettre à jour l'état local
-                        if (AppState.messages[sender]) {
-                            AppState.messages[sender].forEach(msg => {
-                                if (msg.sender === sender && !msg.read) {
+                        if (AppState.messages[partnerId]) {
+                            AppState.messages[partnerId].forEach(msg => {
+                                if (msg.sender !== AppState.user.username && !msg.read) {
                                     msg.read = true;
                                 }
                             });
@@ -2076,24 +2042,18 @@
             }
             
             function handleTypingIndicator(data) {
-                if (data.sender === AppState.currentChat) {
-                    // Mettre à jour le statut du contact
-                    const contact = AppState.contacts.find(c => c.username === data.sender);
-                    if (contact) {
-                        contact.typing = true;
-                        updateChatPartnerStatus(contact);
-                    }
+                const contact = AppState.contacts.find(c => c.username === data.sender);
+                if (contact && contact.id === AppState.currentChat) {
+                    contact.typing = true;
+                    updateChatPartnerStatus(contact);
                 }
             }
-            
+
             function handleStopTyping(data) {
-                if (data.sender === AppState.currentChat) {
-                    // Mettre à jour le statut du contact
-                    const contact = AppState.contacts.find(c => c.username === data.sender);
-                    if (contact) {
-                        contact.typing = false;
-                        updateChatPartnerStatus(contact);
-                    }
+                const contact = AppState.contacts.find(c => c.username === data.sender);
+                if (contact && contact.id === AppState.currentChat) {
+                    contact.typing = false;
+                    updateChatPartnerStatus(contact);
                 }
             }
             
