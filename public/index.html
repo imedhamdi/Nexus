@@ -1068,8 +1068,8 @@
             <div class="user-profile">
                 <img id="user-avatar" class="user-avatar" src="https://i.pravatar.cc/150" alt="Avatar">
                 <div class="user-info">
-                    <div id="user-name" class="user-name">John Doe</div>
-                    <div id="user-username" class="user-username">@johndoe</div>
+                    <div id="user-name" class="user-name"></div>
+                    <div id="user-username" class="user-username"></div>
                     <div class="user-status">
                         <span class="status-dot"></span>
                         <span>En ligne</span>
@@ -1094,42 +1094,6 @@
             
             <div class="contacts-list" id="contacts-list">
                 <!-- Contacts will be dynamically added here -->
-                <div class="contact">
-                    <div class="contact-avatar">
-                        <img src="https://i.pravatar.cc/150?img=3" alt="Contact">
-                        <span class="contact-status online"></span>
-                    </div>
-                    <div class="contact-info">
-                        <div class="contact-name">Jane Smith</div>
-                        <div class="contact-last-msg">Salut, comment ça va ?</div>
-                    </div>
-                    <div class="contact-time">12:30</div>
-                    <div class="unread-count">3</div>
-                </div>
-                
-                <div class="contact">
-                    <div class="contact-avatar">
-                        <img src="https://i.pravatar.cc/150?img=5" alt="Contact">
-                        <span class="contact-status offline"></span>
-                    </div>
-                    <div class="contact-info">
-                        <div class="contact-name">Mike Johnson</div>
-                        <div class="contact-last-msg">On se voit demain !</div>
-                    </div>
-                    <div class="contact-time">Hier</div>
-                </div>
-                
-                <div class="contact">
-                    <div class="contact-avatar">
-                        <img src="https://i.pravatar.cc/150?img=8" alt="Contact">
-                        <span class="contact-status typing"></span>
-                    </div>
-                    <div class="contact-info">
-                        <div class="contact-name">Sarah Williams</div>
-                        <div class="contact-last-msg">Est en train d'écrire...</div>
-                    </div>
-                    <div class="contact-time">11:45</div>
-                </div>
             </div>
         </aside>
         
@@ -1140,11 +1104,11 @@
                 <button class="menu-btn"><i class="fas fa-bars"></i></button>
                 <div class="chat-partner">
                     <div class="chat-partner-avatar">
-                        <img id="chat-partner-avatar" src="https://i.pravatar.cc/150?img=3" alt="Partner">
+                        <img id="chat-partner-avatar" src="" alt="Partner">
                         <span id="chat-partner-status" class="contact-status online"></span>
                     </div>
                     <div class="chat-partner-info">
-                        <div id="chat-partner-name" class="chat-partner-name">Jane Smith</div>
+                        <div id="chat-partner-name" class="chat-partner-name"></div>
                         <div id="chat-partner-status-text" class="chat-partner-status">
                             <span class="status-dot online"></span>
                             <span>En ligne</span>
@@ -1159,61 +1123,6 @@
             
             <section id="messages-container" class="messages-container">
                 <!-- Messages will be dynamically added here -->
-                <div class="date-separator">Aujourd'hui</div>
-                
-                <div class="message received">
-                    <div class="message-wrapper">
-                        <div class="message-content">
-                            Salut ! Comment ça va ?
-                        </div>
-                        <div class="message-info">
-                            <span class="timestamp">12:30</span>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="message sent">
-                    <div class="message-wrapper">
-                        <div class="message-content">
-                            Ça va bien merci ! Et toi ?
-                        </div>
-                        <div class="message-info">
-                            <span class="timestamp">12:32</span>
-                            <i class="fas fa-check read-receipt read"></i>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="message received">
-                    <div class="message-wrapper">
-                        <div class="message-content">
-                            Super aussi ! Tu as vu cette photo ?
-                            <img class="msg-image" src="https://picsum.photos/400/300" alt="Shared">
-                        </div>
-                        <div class="message-info">
-                            <span class="timestamp">12:33</span>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="message sent">
-                    <div class="message-wrapper">
-                        <div class="message-content">
-                            Oui, magnifique ! Voici le document dont je t'ai parlé :
-                            <a href="#" class="msg-file">
-                                <i class="fas fa-file-pdf"></i>
-                                <div>
-                                    <div class="message-file-name">Document-important.pdf</div>
-                                    <div class="message-file-size">2.4 MB</div>
-                                </div>
-                            </a>
-                        </div>
-                        <div class="message-info">
-                            <span class="timestamp">12:35</span>
-                            <i class="fas fa-check read-receipt"></i>
-                        </div>
-                    </div>
-                </div>
             </section>
             
             <footer class="chat-input-area">
@@ -1243,7 +1152,7 @@
         <video id="remote-video" autoplay></video>
         <video id="local-video" autoplay muted></video>
         <div class="call-info">
-            <div id="call-partner-name" class="call-name">Jane Smith</div>
+            <div id="call-partner-name" class="call-name"></div>
             <div id="call-status" class="call-status">Appel en cours...</div>
         </div>
         <div class="call-controls">
@@ -1342,6 +1251,7 @@
                 isInCall: false,
                 callType: null, // 'audio' or 'video'
                 callPartner: null,
+                incomingOffer: null,
                 isMuted: false,
                 isVideoOff: false
             };
@@ -2074,25 +1984,35 @@
                 try {
                     // Afficher l'interface de préparation de l'appel
                     DOM.callPreviewContainer.classList.add('active');
-                    
+
                     // Obtenir le flux média local
                     const constraints = {
                         audio: true,
                         video: type === 'video'
                     };
-                    
+
                     AppState.localStream = await navigator.mediaDevices.getUserMedia(constraints);
-                    
+
+                    // Initialiser WebRTC et créer l'offre
+                    await initWebRTC();
+
+                    const partner = AppState.contacts.find(c => c.id === AppState.callPartner);
+                    if (partner) {
+                        DOM.callPartnerName.textContent = partner.name;
+                    }
+                    DOM.callStatus.textContent = 'En attente...';
+
                     // Afficher le flux local dans l'aperçu
                     DOM.previewVideo.srcObject = AppState.localStream;
-                    
+
                     // Démarrer la sonnerie
                     DOM.callSound.play().catch(e => console.error('Call sound error:', e));
-                    
+
                     // Envoyer l'offre d'appel via le socket
                     AppState.socket.emit('webrtc-offer', {
                         recipient: AppState.callPartner,
-                        type: AppState.callType
+                        type: AppState.callType,
+                        offer: AppState.peerConnection.localDescription
                     });
                     
                     // Afficher un toast au destinataire (géré côté serveur)
@@ -2108,6 +2028,8 @@
                     // Ignorer si déjà en appel
                     return;
                 }
+
+                AppState.incomingOffer = data.offer || null;
                 
                 // Jouer la sonnerie
                 DOM.callSound.play().catch(e => console.error('Call sound error:', e));
@@ -2189,6 +2111,12 @@
                     
                     // Initialiser la connexion WebRTC
                     await initWebRTC(true);
+
+                    if (AppState.incomingOffer) {
+                        await AppState.peerConnection.setRemoteDescription(new RTCSessionDescription(AppState.incomingOffer));
+                        const answer = await AppState.peerConnection.createAnswer();
+                        await AppState.peerConnection.setLocalDescription(answer);
+                    }
                     
                     // Afficher l'interface d'appel
                     DOM.callContainer.classList.add('active');
@@ -2274,6 +2202,12 @@
                 // Définir la description distante
                 AppState.peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer))
                     .catch(err => console.error('Error setting remote description:', err));
+
+                const partner = AppState.contacts.find(c => c.id === AppState.callPartner);
+                if (partner) {
+                    DOM.callPartnerName.textContent = partner.name;
+                }
+                DOM.callStatus.textContent = 'Appel en cours...';
             }
             
             function handleWebRTCCandidate(data) {
