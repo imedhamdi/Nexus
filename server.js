@@ -1,6 +1,6 @@
 /**
  * Nexus Chat - Serveur Backend Complet
- * Version améliorée avec authentification, base de données et sécurité renforcée
+ * Version de production avec persistance, sécurité renforcée et gestion d'état
  */
 
 require('dotenv').config();
@@ -16,34 +16,28 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const helmet = require('helmet');
 
-// Configuration et middleware
+// Initialisation de l'application Express
 const app = express();
+const server = http.createServer(app);
+
+// Configuration des middlewares
 app.use(express.json());
 app.use(cors());
-
-// Utiliser Helmet pour définir des en-têtes de sécurité, y compris la Content-Security-Policy
-app.use(
-  helmet({
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'self'"],
-        // 'unsafe-inline' est nécessaire pour les scripts et styles directement dans index.html
-        // Idéalement, déplacez-les dans des fichiers .js et .css séparés à l'avenir.
-        scriptSrc: ["'self'", "'unsafe-inline'"],
-        styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://cdnjs.cloudflare.com"],
-        // data: est pour l'aperçu de l'avatar, https://i.pravatar.cc est l'avatar par défaut
-        imgSrc: ["'self'", "data:", "https://i.pravatar.cc"],
-        fontSrc: ["'self'", "https://fonts.googleapis.com", "https://fonts.gstatic.com", "https://cdnjs.cloudflare.com"],
-        // Pour les sons de notification et d'appel
-        mediaSrc: ["'self'", "https://assets.mixkit.co"],
-        // Pour les connexions WebSocket de Socket.IO
-        connectSrc: ["'self'", "ws:", "wss:"]
-      },
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://cdnjs.cloudflare.com"],
+      imgSrc: ["'self'", "data:", "https://i.pravatar.cc"],
+      fontSrc: ["'self'", "https://fonts.googleapis.com", "https://fonts.gstatic.com", "https://cdnjs.cloudflare.com"],
+      mediaSrc: ["'self'", "https://assets.mixkit.co"],
+      connectSrc: ["'self'", "ws:", "wss:"]
     },
-  })
-);
+  }
+}));
 
-const server = http.createServer(app);
+// Configuration de Socket.io
 const io = new Server(server, {
   cors: {
     origin: "*",
@@ -51,157 +45,379 @@ const io = new Server(server, {
   }
 });
 
-// Connexion à MongoDB
-mongoose.connect(process.env.MONGODB_URI || 'mongodb+srv://imedhamdi007:imed25516242@api-nodejs.lpnpgx4.mongodb.net/?retryWrites=true&w=majority&appName=API-NodeJS');
+// Connexion à MongoDB avec gestion d'erreur
+const connectDB = async () => {
+  try {
+    await mongoose.connect(process.env.MONGODB_URI || 'mongodb+srv://imedhamdi007:imed25516242@api-nodejs.lpnpgx4.mongodb.net/?retryWrites=true&w=majority&appName=API-NodeJS', {
+      useNewUrlParser: true,
+      useUnifiedTopology: true
+    });
+    console.log('[MONGODB] Connecté avec succès');
+  } catch (err) {
+    console.error('[MONGODB] Erreur de connexion:', err.message);
+    process.exit(1);
+  }
+};
+connectDB();
 
-// Modèles Mongoose
+// Schémas et modèles Mongoose
 const UserSchema = new mongoose.Schema({
-  username: { type: String, required: true, unique: true },
-  password: { type: String, required: true },
-  name: { type: String, required: true },
-  avatar: { type: String },
-  createdAt: { type: Date, default: Date.now }
+  username: { 
+    type: String, 
+    required: true, 
+    unique: true,
+    index: true,
+    trim: true,
+    minlength: 3,
+    maxlength: 20,
+    match: /^[a-zA-Z0-9_]+$/ // N'autorise que les caractères alphanumériques et underscores
+  },
+  password: { 
+    type: String, 
+    required: true,
+    minlength: 6
+  },
+  name: { 
+    type: String, 
+    required: true,
+    trim: true,
+    maxlength: 50
+  },
+  avatar: { 
+    type: String,
+    default: '/uploads/default-avatar.png'
+  },
+  createdAt: { 
+    type: Date, 
+    default: Date.now 
+  }
 });
 
 const MessageSchema = new mongoose.Schema({
-  sender: { type: String, required: true },
-  recipient: { type: String, required: true },
-  content: { type: String, required: true },
-  type: { type: String, enum: ['text', 'image', 'file'], default: 'text' },
-  fileUrl: { type: String },
-  read: { type: Boolean, default: false },
-  createdAt: { type: Date, default: Date.now }
+  sender: { 
+    type: String, 
+    required: true,
+    ref: 'User'
+  },
+  recipient: { 
+    type: String, 
+    required: true,
+    ref: 'User'
+  },
+  content: { 
+    type: String, 
+    required: true,
+    maxlength: 2000
+  },
+  type: { 
+    type: String, 
+    enum: ['text', 'image', 'file'], 
+    default: 'text' 
+  },
+  fileUrl: { 
+    type: String 
+  },
+  read: { 
+    type: Boolean, 
+    default: false 
+  },
+  createdAt: { 
+    type: Date, 
+    default: Date.now,
+    index: true 
+  }
 });
 
 const User = mongoose.model('User', UserSchema);
 const Message = mongoose.model('Message', MessageSchema);
 
-// Configuration Multer sécurisée
+// Configuration Multer pour les uploads
 const uploadsDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
 
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadsDir),
+  destination: (req, file, cb) => {
+    cb(null, uploadsDir);
+  },
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname);
-    cb(null, `${Date.now()}-${Math.round(Math.random() * 1E9)}${ext}`);
+    const filename = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}${ext}`;
+    cb(null, filename);
   }
 });
 
 const fileFilter = (req, file, cb) => {
-  const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'application/pdf', 'text/plain'];
+  const allowedTypes = [
+    'image/jpeg', 
+    'image/png', 
+    'image/gif',
+    'application/pdf',
+    'text/plain',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  ];
+  
   if (allowedTypes.includes(file.mimetype)) {
     cb(null, true);
   } else {
-    cb(new Error('Type de fichier non supporté'), false);
+    cb(new Error('Type de fichier non supporté. Seuls les images, PDF et documents texte sont autorisés.'), false);
   }
 };
 
-const upload = multer({ 
-  storage, 
+const upload = multer({
+  storage,
   fileFilter,
-  limits: { fileSize: 10 * 1024 * 1024 } // 10MB max
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB
+    files: 1
+  }
 });
 
-// Middleware d'authentification
+// Middleware d'authentification JWT
 const authenticate = async (req, res, next) => {
   try {
-    const token = req.headers.authorization?.split(' ')[1];
-    if (!token) return res.status(401).send('Accès non autorisé');
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Authentification requise' });
+    }
+
+    const token = authHeader.split(' ')[1];
+    if (!token) {
+      return res.status(401).json({ error: 'Token manquant' });
+    }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'nexus-secret');
-    req.user = await User.findById(decoded.userId);
-    if (!req.user) return res.status(401).send('Utilisateur non trouvé');
+    const user = await User.findById(decoded.userId).select('-password');
+    
+    if (!user) {
+      return res.status(401).json({ error: 'Utilisateur non trouvé' });
+    }
 
+    req.user = user;
     next();
   } catch (err) {
-    res.status(401).send('Token invalide');
+    if (err.name === 'TokenExpiredError') {
+      return res.status(401).json({ error: 'Token expiré' });
+    }
+    return res.status(401).json({ error: 'Token invalide' });
   }
 };
+
+// Middleware d'authentification pour Socket.io
+io.use(async (socket, next) => {
+  try {
+    const token = socket.handshake.auth.token;
+    if (!token) {
+      return next(new Error('Authentification requise'));
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'nexus-secret');
+    const user = await User.findById(decoded.userId).select('-password');
+    
+    if (!user) {
+      return next(new Error('Utilisateur non trouvé'));
+    }
+
+    socket.user = {
+      id: user._id,
+      username: user.username,
+      name: user.name,
+      avatar: user.avatar
+    };
+    next();
+  } catch (err) {
+    next(new Error(err.message === 'jwt expired' ? 'Token expiré' : 'Token invalide'));
+  }
+});
 
 // Routes API
 app.post('/api/register', async (req, res) => {
   try {
     const { username, password, name } = req.body;
+    
+    // Validation des entrées
     if (!username || !password || !name) {
-      return res.status(400).send('Tous les champs sont requis');
+      return res.status(400).json({ error: 'Tous les champs sont requis' });
     }
 
+    // Vérification de l'unicité du username
     const existingUser = await User.findOne({ username });
-    if (existingUser) return res.status(400).send('Nom d\'utilisateur déjà pris');
+    if (existingUser) {
+      return res.status(400).json({ error: 'Nom d\'utilisateur déjà pris' });
+    }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const user = new User({ username, password: hashedPassword, name });
+    // Hachage du mot de passe
+    const hashedPassword = await bcrypt.hash(password, 12);
+    
+    // Création de l'utilisateur
+    const user = new User({ 
+      username, 
+      password: hashedPassword, 
+      name 
+    });
     await user.save();
 
-    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET || 'nexus-secret', { expiresIn: '30d' });
-    res.status(201).json({ token, user: { id: user._id, username: user.username, name: user.name } });
+    // Génération du token JWT
+    const token = jwt.sign(
+      { userId: user._id },
+      process.env.JWT_SECRET || 'nexus-secret',
+      { expiresIn: '30d' }
+    );
+
+    // Réponse sans le mot de passe
+    const userResponse = {
+      id: user._id,
+      username: user.username,
+      name: user.name,
+      avatar: user.avatar,
+      createdAt: user.createdAt
+    };
+
+    res.status(201).json({ 
+      token, 
+      user: userResponse 
+    });
   } catch (err) {
-    res.status(500).send('Erreur lors de l\'inscription');
+    console.error('[REGISTER] Erreur:', err);
+    res.status(500).json({ error: 'Erreur lors de l\'inscription' });
   }
 });
 
 app.post('/api/login', async (req, res) => {
   try {
     const { username, password } = req.body;
+
+    // Validation des entrées
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Nom d\'utilisateur et mot de passe requis' });
+    }
+
+    // Recherche de l'utilisateur
     const user = await User.findOne({ username });
-    if (!user) return res.status(401).send('Identifiants invalides');
+    if (!user) {
+      return res.status(401).json({ error: 'Identifiants invalides' });
+    }
 
+    // Vérification du mot de passe
     const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) return res.status(401).send('Identifiants invalides');
+    if (!isMatch) {
+      return res.status(401).json({ error: 'Identifiants invalides' });
+    }
 
-    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET || 'nexus-secret', { expiresIn: '30d' });
-    res.json({ token, user: { id: user._id, username: user.username, name: user.name, avatar: user.avatar } });
+    // Génération du token JWT
+    const token = jwt.sign(
+      { userId: user._id },
+      process.env.JWT_SECRET || 'nexus-secret',
+      { expiresIn: '30d' }
+    );
+
+    // Réponse sans le mot de passe
+    const userResponse = {
+      id: user._id,
+      username: user.username,
+      name: user.name,
+      avatar: user.avatar,
+      createdAt: user.createdAt
+    };
+
+    res.json({ 
+      token, 
+      user: userResponse 
+    });
   } catch (err) {
-    res.status(500).send('Erreur lors de la connexion');
+    console.error('[LOGIN] Erreur:', err);
+    res.status(500).json({ error: 'Erreur lors de la connexion' });
   }
 });
 
 app.post('/api/upload-avatar', authenticate, upload.single('avatar'), async (req, res) => {
   try {
-    const user = req.user;
-    user.avatar = `/uploads/${req.file.filename}`;
-    await user.save();
-    res.json({ avatar: user.avatar });
+    if (!req.file) {
+      return res.status(400).json({ error: 'Aucun fichier uploadé' });
+    }
+
+    // Mise à jour de l'avatar de l'utilisateur
+    req.user.avatar = `/uploads/${req.file.filename}`;
+    await req.user.save();
+
+    res.json({ 
+      success: true, 
+      avatar: req.user.avatar 
+    });
   } catch (err) {
-    res.status(500).send('Erreur lors de l\'upload de l\'avatar');
+    console.error('[UPLOAD AVATAR] Erreur:', err);
+    res.status(500).json({ error: 'Erreur lors de l\'upload de l\'avatar' });
   }
 });
 
 app.post('/api/upload-file', authenticate, upload.single('file'), async (req, res) => {
   try {
-    const recipient = req.body.recipient;
-    const fileUrl = `/uploads/${req.file.filename}`;
+    const { recipient } = req.body;
     
-    // Sauvegarder le message en base
+    if (!recipient) {
+      return res.status(400).json({ error: 'Destinataire manquant' });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'Aucun fichier uploadé' });
+    }
+
+    // Vérification que le destinataire existe
+    const recipientUser = await User.findOne({ username: recipient });
+    if (!recipientUser) {
+      return res.status(404).json({ error: 'Destinataire non trouvé' });
+    }
+
+    // Détermination du type de fichier
+    const fileType = req.file.mimetype.startsWith('image/') ? 'image' : 'file';
+    const fileUrl = `/uploads/${req.file.filename}`;
+
+    // Création du message
     const message = new Message({
       sender: req.user.username,
       recipient,
       content: req.file.originalname,
-      type: req.file.mimetype.startsWith('image/') ? 'image' : 'file',
+      type: fileType,
       fileUrl
     });
     await message.save();
 
-    res.json({ success: true, url: fileUrl, messageId: message._id });
+    res.json({ 
+      success: true, 
+      url: fileUrl,
+      messageId: message._id,
+      type: fileType
+    });
   } catch (err) {
-    res.status(500).send('Erreur lors de l\'upload du fichier');
+    console.error('[UPLOAD FILE] Erreur:', err);
+    res.status(500).json({ error: 'Erreur lors de l\'upload du fichier' });
   }
 });
 
 app.get('/api/messages', authenticate, async (req, res) => {
   try {
     const { partner } = req.query;
+    
+    if (!partner) {
+      return res.status(400).json({ error: 'Paramètre partner manquant' });
+    }
+
+    // Récupération des messages entre les deux utilisateurs
     const messages = await Message.find({
       $or: [
         { sender: req.user.username, recipient: partner },
         { sender: partner, recipient: req.user.username }
       ]
-    }).sort('createdAt');
-    
+    })
+    .sort({ createdAt: 1 })
+    .limit(100); // Limite pour éviter de surcharger
+
     res.json(messages);
   } catch (err) {
-    res.status(500).send('Erreur lors de la récupération des messages');
+    console.error('[GET MESSAGES] Erreur:', err);
+    res.status(500).json({ error: 'Erreur lors de la récupération des messages' });
   }
 });
 
@@ -212,39 +428,16 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Gestion des connexions Socket.io
 const connectedUsers = {};
 
-io.use((socket, next) => {
-  const token = socket.handshake.auth.token;
-  if (!token) return next(new Error('Authentification requise'));
-
-  jwt.verify(token, process.env.JWT_SECRET || 'nexus-secret', async (err, decoded) => {
-    if (err) return next(new Error('Token invalide'));
-    
-    try {
-      const user = await User.findById(decoded.userId);
-      if (!user) return next(new Error('Utilisateur non trouvé'));
-      
-      socket.user = {
-        id: user._id,
-        username: user.username,
-        name: user.name,
-        avatar: user.avatar
-      };
-      next();
-    } catch (error) {
-      next(new Error('Erreur d\'authentification'));
-    }
-  });
-});
-
 io.on('connection', (socket) => {
-  console.log(`[CONNEXION] ${socket.user.username} connecté`);
+  console.log(`[SOCKET] ${socket.user.username} connecté (ID: ${socket.id})`);
+  
+  // Ajout de l'utilisateur à la liste des connectés
   connectedUsers[socket.user.username] = socket.id;
-
-  // Diffuser la liste des utilisateurs connectés
   io.emit('users-updated', Object.keys(connectedUsers));
 
+  // Gestion de la déconnexion
   socket.on('disconnect', () => {
-    console.log(`[DÉCONNEXION] ${socket.user.username} déconnecté`);
+    console.log(`[SOCKET] ${socket.user.username} déconnecté`);
     delete connectedUsers[socket.user.username];
     io.emit('users-updated', Object.keys(connectedUsers));
   });
@@ -252,6 +445,18 @@ io.on('connection', (socket) => {
   // Gestion des messages
   socket.on('send-message', async ({ recipient, content, type = 'text' }, callback) => {
     try {
+      // Validation des données
+      if (!recipient || !content) {
+        return callback({ success: false, error: 'Destinataire et contenu requis' });
+      }
+
+      // Vérification que le destinataire existe
+      const recipientUser = await User.findOne({ username: recipient });
+      if (!recipientUser) {
+        return callback({ success: false, error: 'Destinataire non trouvé' });
+      }
+
+      // Création et sauvegarde du message
       const message = new Message({
         sender: socket.user.username,
         recipient,
@@ -260,59 +465,108 @@ io.on('connection', (socket) => {
       });
       await message.save();
 
+      // Envoi en temps réel si le destinataire est connecté
       const recipientSocketId = connectedUsers[recipient];
       if (recipientSocketId) {
         io.to(recipientSocketId).emit('new-message', {
           id: message._id,
           sender: socket.user.username,
+          senderName: socket.user.name,
+          senderAvatar: socket.user.avatar,
           content,
           type,
-          createdAt: message.createdAt
+          createdAt: message.createdAt,
+          read: false
         });
       }
 
-      callback({ success: true, messageId: message._id });
+      callback({ 
+        success: true, 
+        messageId: message._id 
+      });
     } catch (err) {
+      console.error('[SEND MESSAGE] Erreur:', err);
       callback({ success: false, error: 'Erreur d\'envoi du message' });
     }
   });
 
   // Gestion des appels WebRTC
   socket.on('webrtc-offer', (data) => {
-    const recipientSocketId = connectedUsers[data.recipient];
+    const { recipient } = data;
+    if (!recipient) return;
+
+    const recipientSocketId = connectedUsers[recipient];
     if (recipientSocketId) {
       io.to(recipientSocketId).emit('webrtc-offer', {
         ...data,
         caller: socket.user.username,
-        callerName: socket.user.name
+        callerName: socket.user.name,
+        callerAvatar: socket.user.avatar
       });
     }
   });
 
   socket.on('webrtc-answer', (data) => {
-    const recipientSocketId = connectedUsers[data.recipient];
+    const { recipient } = data;
+    if (!recipient) return;
+
+    const recipientSocketId = connectedUsers[recipient];
     if (recipientSocketId) {
       io.to(recipientSocketId).emit('webrtc-answer', data);
     }
   });
 
   socket.on('webrtc-ice-candidate', (data) => {
-    const recipientSocketId = connectedUsers[data.recipient];
+    const { recipient } = data;
+    if (!recipient) return;
+
+    const recipientSocketId = connectedUsers[recipient];
     if (recipientSocketId) {
       io.to(recipientSocketId).emit('webrtc-ice-candidate', data);
     }
   });
 
   socket.on('end-call', (data) => {
-    const recipientSocketId = connectedUsers[data.recipient];
+    const { recipient } = data;
+    if (!recipient) return;
+
+    const recipientSocketId = connectedUsers[recipient];
     if (recipientSocketId) {
       io.to(recipientSocketId).emit('end-call', data);
     }
   });
+
+  // Marquer les messages comme lus
+  socket.on('mark-messages-read', async ({ sender }, callback) => {
+    try {
+      await Message.updateMany(
+        { sender, recipient: socket.user.username, read: false },
+        { $set: { read: true } }
+      );
+      callback({ success: true });
+    } catch (err) {
+      console.error('[MARK READ] Erreur:', err);
+      callback({ success: false, error: 'Erreur lors du marquage des messages comme lus' });
+    }
+  });
+});
+
+// Gestion des erreurs globales
+app.use((err, req, res, next) => {
+  console.error('[ERROR]', err.stack);
+  res.status(500).json({ error: 'Une erreur est survenue' });
 });
 
 // Démarrer le serveur
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`[SERVEUR] Nexus Chat démarré sur http://localhost:${PORT}`);
+  console.log(`[SERVER] Nexus Chat démarré sur http://localhost:${PORT}`);
+});
+
+// Gestion propre des arrêts
+process.on('SIGINT', () => {
+  mongoose.connection.close(() => {
+    console.log('[MONGODB] Connexion fermée');
+    process.exit(0);
+  });
 });
