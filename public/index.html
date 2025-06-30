@@ -456,6 +456,27 @@
             pointer-events: all;
         }
 
+        .group-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .group-modal .modal-content {
+            background: var(--secondary-bg);
+            padding: 1.5rem;
+            border-radius: 0.5rem;
+            width: 90%;
+            max-width: 400px;
+        }
+
         /* Chat area */
         .chat-area {
             flex-grow: 1;
@@ -1063,6 +1084,7 @@
             <div class="sidebar-header">
                 <h2 class="sidebar-title">Nexus Chat</h2>
                 <button class="close-sidebar-btn"><i class="fas fa-times"></i></button>
+                <button id="new-group-btn" class="nav-item"><i class="fas fa-users"></i><span>Nouveau groupe</span></button>
             </div>
             
             <div class="user-profile">
@@ -1164,6 +1186,27 @@
 
     <div id="toast-container"></div>
 
+    <div id="create-group-modal" class="group-modal hidden">
+        <div class="modal-content">
+            <h3>Créer un groupe</h3>
+            <form id="create-group-form" class="auth-form">
+                <div class="form-group">
+                    <label class="form-label" for="group-name-input">Nom du groupe</label>
+                    <input class="form-input" id="group-name-input" required minlength="3" maxlength="50">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="group-avatar-input">Avatar (URL)</label>
+                    <input class="form-input" id="group-avatar-input" type="text">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="group-members-input">Membres (identifiants séparés par des virgules)</label>
+                    <input class="form-input" id="group-members-input" type="text" placeholder="user1,user2">
+                </div>
+                <button type="submit" class="auth-btn">Créer</button>
+            </form>
+        </div>
+    </div>
+
     <!-- Audio elements for notifications -->
     <audio id="message-sound" src="https://assets.mixkit.co/sfx/preview/mixkit-software-interface-start-2574.mp3" preload="auto" crossorigin="anonymous"></audio>
     <audio id="call-sound" src="https://assets.mixkit.co/sfx/preview/mixkit-waiting-ringtone-1354.mp3" loop preload="auto" crossorigin="anonymous"></audio>
@@ -1196,6 +1239,12 @@
                 menuBtn: document.querySelector('.menu-btn'),
                 closeSidebarBtn: document.querySelector('.close-sidebar-btn'),
                 contactsList: document.getElementById('contacts-list'),
+                newGroupBtn: document.getElementById('new-group-btn'),
+                createGroupModal: document.getElementById('create-group-modal'),
+                createGroupForm: document.getElementById('create-group-form'),
+                groupNameInput: document.getElementById('group-name-input'),
+                groupAvatarInput: document.getElementById('group-avatar-input'),
+                groupMembersInput: document.getElementById('group-members-input'),
                 
                 // Chat
                 messagesContainer: document.getElementById('messages-container'),
@@ -1298,6 +1347,16 @@
                 DOM.menuBtn.addEventListener('click', toggleSidebar);
                 DOM.closeSidebarBtn.addEventListener('click', toggleSidebar);
                 DOM.sidebarOverlay.addEventListener('click', toggleSidebar);
+
+                DOM.newGroupBtn.addEventListener('click', () => {
+                    DOM.createGroupModal.classList.remove('hidden');
+                });
+
+                DOM.createGroupModal.addEventListener('click', (e) => {
+                    if (e.target === DOM.createGroupModal) DOM.createGroupModal.classList.add('hidden');
+                });
+
+                DOM.createGroupForm.addEventListener('submit', handleCreateGroup);
                 
                 // Chat
                 DOM.chatForm.addEventListener('submit', sendMessage);
@@ -2404,7 +2463,37 @@
                     AppState.socket.emit('end-call', { recipient: AppState.callPartner });
                 }
             }
-            
+
+            async function handleCreateGroup(e) {
+                e.preventDefault();
+                const name = DOM.groupNameInput.value.trim();
+                const avatar = DOM.groupAvatarInput.value.trim();
+                const membersText = DOM.groupMembersInput.value.trim();
+                if (!name) return;
+                const members = membersText ? membersText.split(',').map(m => m.trim()).filter(Boolean) : [];
+                const token = localStorage.getItem('nexusToken');
+                try {
+                    const response = await fetch(`${API_BASE_URL}/api/groups`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                        body: JSON.stringify({ name, avatar, members })
+                    });
+                    const data = await response.json();
+                    if (response.ok) {
+                        showToast('Groupe créé', 'success');
+                        DOM.createGroupModal.classList.add('hidden');
+                        DOM.groupNameInput.value = '';
+                        DOM.groupAvatarInput.value = '';
+                        DOM.groupMembersInput.value = '';
+                    } else {
+                        showToast(data.error || 'Erreur', 'error');
+                    }
+                } catch (err) {
+                    console.error('Create group error:', err);
+                    showToast('Erreur serveur', 'error');
+                }
+            }
+
             // Utilitaires
             function showToast(message, type = 'info') {
                 const toast = document.createElement('div');
