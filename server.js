@@ -21,6 +21,7 @@ const jwt = require('jsonwebtoken');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const helmet = require('helmet');
+const Agenda = require('agenda');
 
 // Configuration des serveurs STUN/TURN pour WebRTC
 const iceServers = process.env.ICE_SERVERS
@@ -157,6 +158,14 @@ const MessageSchema = new mongoose.Schema({
   fileUrl: {
     type: String
   },
+  replyTo: { type: mongoose.Schema.Types.ObjectId, ref: 'Message' },
+  replySnippet: String,
+  reactions: {
+    type: Map,
+    of: [mongoose.Schema.Types.ObjectId],
+    default: {}
+  },
+  expiresAt: Date,
   read: {
     type: Boolean,
     default: false
@@ -188,10 +197,20 @@ const MessageSchema = new mongoose.Schema({
 
 // Index pour accélérer la recherche des messages par participants et date
 MessageSchema.index({ sender: 1, recipient: 1, createdAt: 1 });
+MessageSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
 const User = mongoose.model('User', UserSchema);
 const Message = mongoose.model('Message', MessageSchema);
 const Group = mongoose.model('Group', GroupSchema);
+
+// Configuration Agenda pour les messages éphémères
+const agenda = new Agenda({ mongo: mongoose.connection });
+agenda.define('cleanup-expired-messages', async () => {
+  await Message.deleteMany({ expiresAt: { $lte: new Date() } });
+});
+agenda.start().then(() => {
+  agenda.every('1 minute', 'cleanup-expired-messages');
+});
 
 // Configuration Multer pour les uploads
 const uploadsDir = path.join(__dirname, 'uploads');
@@ -619,6 +638,10 @@ app.get('/api/messages', authenticate, async (req, res) => {
       content: m.content,
       type: m.type,
       fileUrl: m.fileUrl,
+      replyTo: m.replyTo,
+      replySnippet: m.replySnippet,
+      reactions: Object.fromEntries(m.reactions),
+      expiresAt: m.expiresAt,
       createdAt: m.createdAt,
       read: m.read,
       edited: m.edited,
@@ -659,6 +682,10 @@ app.get('/api/groups/:id/messages', authenticate, async (req, res) => {
       content: m.content,
       type: m.type,
       fileUrl: m.fileUrl,
+      replyTo: m.replyTo,
+      replySnippet: m.replySnippet,
+      reactions: Object.fromEntries(m.reactions),
+      expiresAt: m.expiresAt,
       createdAt: m.createdAt,
       readBy: m.readBy,
       edited: m.edited,
@@ -767,7 +794,7 @@ io.on('connection', (socket) => {
   });
 
   // Gestion des messages
-  socket.on('send-message', async ({ recipient, content, type = 'text' }, callback) => {
+  socket.on('send-message', async ({ recipient, content, type = 'text', replyTo, expiresIn }, callback) => {
     try {
       // Validation des données
       if (!recipient || !content) {
@@ -781,11 +808,22 @@ io.on('connection', (socket) => {
       }
 
       // Création et sauvegarde du message
+      let replySnippet;
+      if (replyTo) {
+        const original = await Message.findById(replyTo);
+        if (original) {
+          replySnippet = original.content.substring(0, 50);
+        }
+      }
+
       const message = new Message({
         sender: socket.user.id,
         recipient: recipientUser._id,
         content,
-        type
+        type,
+        replyTo: replyTo || undefined,
+        replySnippet,
+        expiresAt: expiresIn ? new Date(Date.now() + expiresIn) : undefined
       });
       await message.save();
 
@@ -799,6 +837,10 @@ io.on('connection', (socket) => {
         senderAvatar: socket.user.avatar,
         content,
         type,
+        replyTo: message.replyTo,
+        replySnippet: message.replySnippet,
+        reactions: Object.fromEntries(message.reactions),
+        expiresAt: message.expiresAt,
         createdAt: message.createdAt,
         read: false
       };
@@ -816,7 +858,7 @@ io.on('connection', (socket) => {
   });
 
   // Gestion des messages de groupe
-  socket.on('send-group-message', async ({ groupId, content, type = 'text' }, callback) => {
+  socket.on('send-group-message', async ({ groupId, content, type = 'text', replyTo, expiresIn }, callback) => {
     try {
       if (!groupId || !content) {
         return callback({ success: false, error: 'Groupe et contenu requis' });
@@ -831,11 +873,22 @@ io.on('connection', (socket) => {
         return callback({ success: false, error: 'Action non autorisée' });
       }
 
+      let replySnippet;
+      if (replyTo) {
+        const original = await Message.findById(replyTo);
+        if (original) {
+          replySnippet = original.content.substring(0, 50);
+        }
+      }
+
       const message = new Message({
         sender: socket.user.id,
         group: group._id,
         content,
-        type
+        type,
+        replyTo: replyTo || undefined,
+        replySnippet,
+        expiresAt: expiresIn ? new Date(Date.now() + expiresIn) : undefined
       });
       await message.save();
 
@@ -847,6 +900,10 @@ io.on('connection', (socket) => {
         senderAvatar: socket.user.avatar,
         content,
         type,
+        replyTo: message.replyTo,
+        replySnippet: message.replySnippet,
+        reactions: Object.fromEntries(message.reactions),
+        expiresAt: message.expiresAt,
         createdAt: message.createdAt
       };
 
@@ -861,6 +918,49 @@ io.on('connection', (socket) => {
     } catch (err) {
       console.error('[SEND GROUP MESSAGE] Erreur:', err);
       callback({ success: false, error: 'Erreur lors de l\'envoi du message' });
+    }
+  });
+
+  // Ajouter ou retirer une réaction
+  socket.on('add-reaction', async ({ messageId, emoji }, callback) => {
+    try {
+      const message = await Message.findById(messageId);
+      if (!message) return callback({ success: false, error: 'Message non trouvé' });
+
+      const userId = socket.user.id.toString();
+      const list = message.reactions.get(emoji) || [];
+      const index = list.findIndex(id => id.toString() === userId);
+      if (index !== -1) {
+        list.splice(index, 1);
+      } else {
+        if (list.length >= 5) return callback({ success: false, error: 'Limite atteinte' });
+        list.push(socket.user.id);
+      }
+      message.reactions.set(emoji, list);
+      await message.save();
+
+      const recipientId = message.recipient || message.group;
+      const payload = { id: message._id, reactions: Object.fromEntries(message.reactions) };
+
+      if (message.recipient) {
+        const targetUser = await User.findById(message.recipient);
+        const sid = connectedUsers[targetUser.username];
+        if (sid) io.to(sid).emit('reaction-updated', payload);
+      } else if (message.group) {
+        const group = await Group.findById(message.group).populate('members', 'username');
+        group.members.forEach(m => {
+          const sid = connectedUsers[m.username];
+          if (sid) io.to(sid).emit('reaction-updated', payload);
+        });
+      }
+
+      const senderSid = connectedUsers[socket.user.username];
+      if (senderSid) io.to(senderSid).emit('reaction-updated', payload);
+
+      callback({ success: true });
+    } catch (err) {
+      console.error('[ADD REACTION] Erreur:', err);
+      callback({ success: false, error: 'Erreur lors de la réaction' });
     }
   });
 
