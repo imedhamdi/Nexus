@@ -106,6 +106,28 @@ const UserSchema = new mongoose.Schema({
   }
 });
 
+const GroupSchema = new mongoose.Schema({
+  name: {
+    type: String,
+    required: true,
+    trim: true,
+    minlength: 3,
+    maxlength: 50
+  },
+  avatar: String,
+  members: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  editHistory: [{
+    name: String,
+    avatar: String,
+    members: [mongoose.Schema.Types.ObjectId],
+    updatedAt: Date,
+    updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+  }],
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now }
+});
+
 const MessageSchema = new mongoose.Schema({
   sender: {
     type: mongoose.Schema.Types.ObjectId,
@@ -114,11 +136,16 @@ const MessageSchema = new mongoose.Schema({
   },
   recipient: {
     type: mongoose.Schema.Types.ObjectId,
-    required: true,
-    ref: 'User'
+    ref: 'User',
+    required: function() { return !this.group; }
   },
-  content: { 
-    type: String, 
+  group: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Group',
+    required: function() { return !this.recipient; }
+  },
+  content: {
+    type: String,
     required: true,
     maxlength: 2000
   },
@@ -127,13 +154,17 @@ const MessageSchema = new mongoose.Schema({
     enum: ['text', 'image', 'file'], 
     default: 'text' 
   },
-  fileUrl: { 
-    type: String 
+  fileUrl: {
+    type: String
   },
   read: {
     type: Boolean,
     default: false
   },
+  readBy: [{
+    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    readAt: Date
+  }],
   edited: {
     type: Boolean,
     default: false
@@ -160,6 +191,7 @@ MessageSchema.index({ sender: 1, recipient: 1, createdAt: 1 });
 
 const User = mongoose.model('User', UserSchema);
 const Message = mongoose.model('Message', MessageSchema);
+const Group = mongoose.model('Group', GroupSchema);
 
 // Configuration Multer pour les uploads
 const uploadsDir = path.join(__dirname, 'uploads');
@@ -452,6 +484,112 @@ app.post('/api/upload-file', authenticate, upload.single('file'), async (req, re
   }
 });
 
+// Créer un groupe
+app.post('/api/groups', authenticate, async (req, res) => {
+  try {
+    const { name, avatar, members } = req.body;
+
+    if (!name || !Array.isArray(members)) {
+      return res.status(400).json({ error: 'Nom et membres requis' });
+    }
+
+    if (name.length < 3 || name.length > 50) {
+      return res.status(400).json({ error: 'Le nom doit contenir entre 3 et 50 caractères' });
+    }
+
+    const uniqueMembers = Array.from(new Set(members.concat(req.user._id.toString())));
+    if (uniqueMembers.length < 2 || uniqueMembers.length > 100) {
+      return res.status(400).json({ error: 'Le groupe doit avoir entre 2 et 100 membres' });
+    }
+
+    const users = await User.find({ _id: { $in: uniqueMembers } });
+    if (users.length !== uniqueMembers.length) {
+      return res.status(400).json({ error: 'Certains membres sont introuvables' });
+    }
+
+    const group = new Group({
+      name,
+      avatar,
+      members: uniqueMembers,
+      createdBy: req.user._id
+    });
+    await group.save();
+
+    io.emit('group-created', { id: group._id, name: group.name });
+
+    res.status(201).json({ success: true, groupId: group._id });
+  } catch (err) {
+    console.error('[CREATE GROUP] Erreur:', err);
+    res.status(500).json({ error: 'Erreur lors de la création du groupe' });
+  }
+});
+
+// Modifier un groupe
+app.patch('/api/groups/:id', authenticate, async (req, res) => {
+  try {
+    const group = await Group.findById(req.params.id);
+    if (!group) {
+      return res.status(404).json({ error: 'Groupe non trouvé' });
+    }
+
+    if (!group.members.some(m => m.equals(req.user._id))) {
+      return res.status(403).json({ error: 'Action non autorisée' });
+    }
+
+    const { name, avatar, members } = req.body;
+    const updates = {};
+
+    if (name) {
+      if (name.length < 3 || name.length > 50) {
+        return res.status(400).json({ error: 'Le nom doit contenir entre 3 et 50 caractères' });
+      }
+      updates.name = name;
+    }
+
+    if (avatar) updates.avatar = avatar;
+
+    if (Array.isArray(members)) {
+      const uniqueMembers = Array.from(new Set(members));
+      if (uniqueMembers.length < 2 || uniqueMembers.length > 100) {
+        return res.status(400).json({ error: 'Le groupe doit avoir entre 2 et 100 membres' });
+      }
+      const users = await User.find({ _id: { $in: uniqueMembers } });
+      if (users.length !== uniqueMembers.length) {
+        return res.status(400).json({ error: 'Certains membres sont introuvables' });
+      }
+      updates.members = uniqueMembers;
+    }
+
+    const historyEntry = {
+      name: group.name,
+      avatar: group.avatar,
+      members: group.members,
+      updatedAt: new Date(),
+      updatedBy: req.user._id
+    };
+    group.editHistory.push(historyEntry);
+    Object.assign(group, updates, { updatedAt: new Date() });
+    await group.save();
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[EDIT GROUP] Erreur:', err);
+    res.status(500).json({ error: 'Erreur lors de la modification du groupe' });
+  }
+});
+
+// Lister les groupes de l'utilisateur
+app.get('/api/groups', authenticate, async (req, res) => {
+  try {
+    const groups = await Group.find({ members: req.user._id }).select('_id name avatar members updatedAt');
+    res.json(groups);
+  } catch (err) {
+    console.error('[GET GROUPS] Erreur:', err);
+    res.status(500).json({ error: 'Erreur lors de la récupération des groupes' });
+  }
+});
+
+
 app.get('/api/messages', authenticate, async (req, res) => {
   try {
     const { partner, page = 1, limit = 50 } = req.query; // partner est l'ID du correspondant
@@ -491,6 +629,46 @@ app.get('/api/messages', authenticate, async (req, res) => {
   } catch (err) {
     console.error('[GET MESSAGES] Erreur:', err);
     res.status(500).json({ error: 'Erreur lors de la récupération des messages' });
+  }
+});
+
+// Récupérer les messages d'un groupe
+app.get('/api/groups/:id/messages', authenticate, async (req, res) => {
+  try {
+    const { page = 1, limit = 50 } = req.query;
+    const group = await Group.findById(req.params.id);
+    if (!group) {
+      return res.status(404).json({ error: 'Groupe non trouvé' });
+    }
+    if (!group.members.some(m => m.equals(req.user._id))) {
+      return res.status(403).json({ error: 'Accès refusé' });
+    }
+
+    const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
+    const maxLimit = Math.min(parseInt(limit, 10), 100);
+
+    const rawMessages = await Message.find({ group: group._id })
+      .sort({ createdAt: 1 })
+      .skip(skip)
+      .limit(maxLimit)
+      .populate('sender', 'username');
+
+    const messages = rawMessages.map(m => ({
+      id: m._id,
+      sender: m.sender.username,
+      content: m.content,
+      type: m.type,
+      fileUrl: m.fileUrl,
+      createdAt: m.createdAt,
+      readBy: m.readBy,
+      edited: m.edited,
+      deleted: m.deleted
+    }));
+
+    res.json(messages);
+  } catch (err) {
+    console.error('[GET GROUP MESSAGES] Erreur:', err);
+    res.status(500).json({ error: 'Erreur lors de la récupération des messages de groupe' });
   }
 });
 
@@ -637,6 +815,55 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Gestion des messages de groupe
+  socket.on('send-group-message', async ({ groupId, content, type = 'text' }, callback) => {
+    try {
+      if (!groupId || !content) {
+        return callback({ success: false, error: 'Groupe et contenu requis' });
+      }
+
+      const group = await Group.findById(groupId);
+      if (!group) {
+        return callback({ success: false, error: 'Groupe non trouvé' });
+      }
+
+      if (!group.members.some(m => m.equals(socket.user.id))) {
+        return callback({ success: false, error: 'Action non autorisée' });
+      }
+
+      const message = new Message({
+        sender: socket.user.id,
+        group: group._id,
+        content,
+        type
+      });
+      await message.save();
+
+      const payload = {
+        id: message._id,
+        group: group._id.toString(),
+        sender: socket.user.username,
+        senderName: socket.user.name,
+        senderAvatar: socket.user.avatar,
+        content,
+        type,
+        createdAt: message.createdAt
+      };
+
+      const members = await User.find({ _id: { $in: group.members } }).select('username');
+      members.forEach(u => {
+        const sid = connectedUsers[u.username];
+        if (sid) io.to(sid).emit('new-group-message', payload);
+      });
+
+      callback({ success: true, messageId: message._id });
+
+    } catch (err) {
+      console.error('[SEND GROUP MESSAGE] Erreur:', err);
+      callback({ success: false, error: 'Erreur lors de l\'envoi du message' });
+    }
+  });
+
   // Gestion des appels WebRTC
   socket.on('webrtc-offer', (data) => {
     const { recipient } = data;
@@ -694,6 +921,19 @@ io.on('connection', (socket) => {
     } catch (err) {
       console.error('[MARK READ] Erreur:', err);
       callback({ success: false, error: 'Erreur lors du marquage des messages comme lus' });
+    }
+  });
+
+  socket.on('mark-group-messages-read', async ({ groupId }, callback) => {
+    try {
+      await Message.updateMany(
+        { group: groupId, 'readBy.user': { $ne: socket.user.id } },
+        { $push: { readBy: { user: socket.user.id, readAt: new Date() } } }
+      );
+      callback({ success: true });
+    } catch (err) {
+      console.error('[MARK GROUP READ] Erreur:', err);
+      callback({ success: false, error: 'Erreur lors du marquage des messages' });
     }
   });
 });
