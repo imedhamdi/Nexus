@@ -776,6 +776,45 @@
             overflow-y: auto;
         }
 
+        #ttl-select {
+            background: rgba(255, 255, 255, 0.05);
+            border: none;
+            color: var(--text-primary);
+            border-radius: 12px;
+            padding: 0 0.5rem;
+            height: 36px;
+        }
+
+        .reply-preview {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: rgba(255,255,255,0.1);
+            border-radius: 12px;
+            padding: 0.25rem 0.5rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .reply-preview.hidden {
+            display: none;
+        }
+
+        .reply-indicator {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            padding: 0 0.75rem;
+        }
+
+        .reactions {
+            padding: 0 0.75rem;
+            font-size: 0.9rem;
+        }
+
+        .expires-in {
+            font-size: 0.75rem;
+            color: var(--warning);
+        }
+
         #message-input:focus {
             outline: none;
             box-shadow: 0 0 0 2px rgba(255, 46, 99, 0.2);
@@ -1151,7 +1190,17 @@
                 <form id="chat-form">
                     <button type="button" class="attach-btn"><i class="fas fa-paperclip"></i></button>
                     <input type="file" id="file-input" class="hidden">
+                    <div id="reply-preview" class="reply-preview hidden">
+                        <span id="reply-snippet"></span>
+                        <button type="button" id="cancel-reply">&times;</button>
+                    </div>
                     <textarea id="message-input" placeholder="Écrivez un message..." rows="1"></textarea>
+                    <select id="ttl-select">
+                        <option value="">∞</option>
+                        <option value="5000">5s</option>
+                        <option value="60000">1m</option>
+                        <option value="3600000">1h</option>
+                    </select>
                     <button type="submit" class="send-btn" disabled><i class="fas fa-paper-plane"></i></button>
                 </form>
             </footer>
@@ -1253,6 +1302,10 @@
                 sendBtn: document.querySelector('.send-btn'),
                 attachBtn: document.querySelector('.attach-btn'),
                 fileInput: document.getElementById('file-input'),
+                replyPreview: document.getElementById('reply-preview'),
+                replySnippet: document.getElementById('reply-snippet'),
+                cancelReply: document.getElementById('cancel-reply'),
+                ttlSelect: document.getElementById('ttl-select'),
                 
                 // User info
                 userAvatar: document.getElementById('user-avatar'),
@@ -1303,7 +1356,9 @@
                 callPartner: null,
                 incomingOffer: null,
                 isMuted: false,
-                isVideoOff: false
+                isVideoOff: false,
+                replyTo: null,
+                ttl: null
             };
             
             // Initialisation de l'application
@@ -1362,6 +1417,10 @@
                 DOM.chatForm.addEventListener('submit', sendMessage);
                 DOM.messageInput.addEventListener('input', handleMessageInput);
                 DOM.attachBtn.addEventListener('click', handleFileUpload);
+                DOM.cancelReply.addEventListener('click', () => setReply(null));
+                DOM.ttlSelect.addEventListener('change', () => {
+                    AppState.ttl = DOM.ttlSelect.value ? parseInt(DOM.ttlSelect.value, 10) : null;
+                });
                 
                 // Appels
                 document.querySelectorAll('.chat-action-btn.call').forEach(btn => {
@@ -1597,6 +1656,10 @@
 
                 socket.on('message-deleted', (data) => {
                     handleMessageDeleted(data);
+                });
+
+                socket.on('reaction-updated', (data) => {
+                    handleReactionUpdated(data);
                 });
                 
                 socket.on('typing', (data) => {
@@ -1846,34 +1909,43 @@
                 }
 
                 let actionsHtml = '';
-                if (isSent && !message.deleted) {
-                    actionsHtml = `
-                        <span class="msg-actions">
-                            <button class="edit-msg" data-id="${message.id}"><i class="fas fa-pen"></i></button>
-                            <button class="delete-msg" data-id="${message.id}"><i class="fas fa-trash"></i></button>
-                        </span>`;
+                if (!message.deleted) {
+                    actionsHtml = `<span class="msg-actions">` +
+                        `<button class="reply-msg" data-id="${message.id}"><i class="fas fa-reply"></i></button>` +
+                        `<button class="react-msg" data-id="${message.id}"><i class="fas fa-smile"></i></button>`;
+                    if (isSent) {
+                        actionsHtml += `<button class="edit-msg" data-id="${message.id}"><i class="fas fa-pen"></i></button>` +
+                                       `<button class="delete-msg" data-id="${message.id}"><i class="fas fa-trash"></i></button>`;
+                    }
+                    actionsHtml += `</span>`;
                 }
 
+                const replyHtml = message.replySnippet ? `<div class="reply-indicator">En réponse à <em>${message.replySnippet}</em></div>` : '';
+                const reactions = message.reactions ? Object.entries(message.reactions).map(([emo, users]) => `${emo} ${users.length}`).join(' ') : '';
+                const ttl = message.expiresAt ? Math.max(0, Math.floor((new Date(message.expiresAt) - Date.now())/1000)) : null;
                 messageEl.innerHTML = `
                     <div class="message-wrapper">
+                        ${replyHtml}
                         <div class="message-content">${contentHtml} ${actionsHtml}</div>
                         <div class="message-info">
                             <span class="timestamp">${formatTime(new Date(message.createdAt))}</span>
                             ${message.edited ? '<span class="edited">(modifié)</span>' : ''}
                             ${isSent ? `<i class="fas fa-check read-receipt ${message.read ? 'read' : ''}"></i>` : ''}
+                            ${ttl !== null ? `<span class="expires-in">${ttl}s</span>` : ''}
                         </div>
+                        ${reactions ? `<div class="reactions">${reactions}</div>` : ''}
                     </div>
                 `;
 
                 // Actions edit/delete
                 const editBtn = messageEl.querySelector('.edit-msg');
-                if (editBtn) {
-                    editBtn.addEventListener('click', () => editMessage(message));
-                }
+                if (editBtn) editBtn.addEventListener('click', () => editMessage(message));
                 const deleteBtn = messageEl.querySelector('.delete-msg');
-                if (deleteBtn) {
-                    deleteBtn.addEventListener('click', () => deleteMessage(message.id));
-                }
+                if (deleteBtn) deleteBtn.addEventListener('click', () => deleteMessage(message.id));
+                const replyBtn = messageEl.querySelector('.reply-msg');
+                if (replyBtn) replyBtn.addEventListener('click', () => setReply(message));
+                const reactBtn = messageEl.querySelector('.react-msg');
+                if (reactBtn) reactBtn.addEventListener('click', () => addReaction(message.id));
 
                 return messageEl;
             }
@@ -1928,7 +2000,9 @@
                     AppState.socket.emit('send-message', {
                         recipient: AppState.currentChat,
                         content: text,
-                        type: 'text'
+                        type: 'text',
+                        replyTo: AppState.replyTo,
+                        expiresIn: AppState.ttl
                     }, (response) => {
                         // Remplacer le message temporaire par le message réel du serveur
                         if (response.success) {
@@ -1949,6 +2023,9 @@
                     // Réinitialiser l'input
                     DOM.messageInput.value = '';
                     DOM.sendBtn.disabled = true;
+                    setReply(null);
+                    DOM.ttlSelect.value = '';
+                    AppState.ttl = null;
                     
                     // Arrêter l'indicateur de saisie
                     if (AppState.typingTimeout) {
@@ -2092,6 +2169,16 @@
                 }
             }
 
+            function handleReactionUpdated(data) {
+                const msgs = AppState.messages[AppState.currentChat];
+                if (!msgs) return;
+                const msg = msgs.find(m => m.id === data.id);
+                if (msg) {
+                    msg.reactions = data.reactions;
+                    renderMessages(msgs);
+                }
+            }
+
             async function editMessage(message) {
                 const newContent = prompt('Modifier le message', message.content);
                 if (newContent === null || newContent.trim() === '') return;
@@ -2140,6 +2227,24 @@
                     console.error('Delete message error:', err);
                     showToast('Erreur lors de la suppression', 'error');
                 }
+            }
+
+            function setReply(message) {
+                AppState.replyTo = message ? message.id : null;
+                if (message) {
+                    DOM.replySnippet.textContent = message.content.slice(0, 50);
+                    DOM.replyPreview.classList.remove('hidden');
+                } else {
+                    DOM.replyPreview.classList.add('hidden');
+                }
+            }
+
+            function addReaction(messageId) {
+                const emoji = prompt('Emoji');
+                if (!emoji) return;
+                AppState.socket.emit('add-reaction', { messageId, emoji }, (res) => {
+                    if (!res.success) showToast(res.error || 'Erreur', 'error');
+                });
             }
             
             function scrollToBottom() {
