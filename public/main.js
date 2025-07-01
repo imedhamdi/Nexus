@@ -189,14 +189,19 @@ function setupAuthListeners() {
     const name = document.getElementById('register-name').value;
     const username = document.getElementById('register-username').value;
     const password = document.getElementById('register-password').value;
-    
+
+    const formData = new FormData();
+    formData.append('name', name);
+    formData.append('username', username);
+    formData.append('password', password);
+    if (dom.avatarInput.files[0]) {
+      formData.append('avatar', dom.avatarInput.files[0]);
+    }
+
     try {
       const response = await fetch(`${config.apiBaseUrl}/api/register`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ name, username, password })
+        body: formData
       });
       
       if (response.ok) {
@@ -305,7 +310,7 @@ function setupAppListeners() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('nexus_token')}`
         },
-        body: JSON.stringify({ name, avatar, members })
+        body: JSON.stringify({ name, avatar, usernames: members })
       });
       
       if (response.ok) {
@@ -1164,7 +1169,11 @@ function initPeerConnection() {
   };
   
   state.peerConnection.onconnectionstatechange = () => {
-    if (state.peerConnection.connectionState === 'disconnected') {
+    const stateStr = state.peerConnection.connectionState;
+    if (stateStr === 'connected') {
+      dom.callPreviewContainer.style.display = 'none';
+      dom.callContainer.style.display = 'flex';
+    } else if (stateStr === 'disconnected' || stateStr === 'failed' || stateStr === 'closed') {
       endCall();
     }
   };
