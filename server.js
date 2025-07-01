@@ -44,8 +44,8 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'"],
-      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://cdnjs.cloudflare.com"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "https://fonts.googleapis.com", "https://cdnjs.cloudflare.com"],
       imgSrc: ["'self'", "data:", "https://i.pravatar.cc"],
       fontSrc: ["'self'", "https://fonts.googleapis.com", "https://fonts.gstatic.com", "https://cdnjs.cloudflare.com"],
       mediaSrc: ["'self'", "https://assets.mixkit.co"],
@@ -97,9 +97,9 @@ const UserSchema = new mongoose.Schema({
     trim: true,
     maxlength: 50
   },
-  avatar: { 
+  avatar: {
     type: String,
-    default: '/uploads/default-avatar.png'
+    default: null
   },
   createdAt: { 
     type: Date, 
@@ -314,14 +314,16 @@ io.use(async (socket, next) => {
 });
 
 // Routes API
-app.post('/api/register', async (req, res) => {
+app.post('/api/register', upload.single('avatar'), async (req, res) => {
+  const { username, password, name } = req.body;
+
+  if (!username || !password || !name) {
+    return res.status(400).json({ error: 'Tous les champs sont requis' });
+  }
+  if (password.length < 6) {
+    return res.status(400).json({ error: 'Le mot de passe doit contenir au moins 6 caractères' });
+  }
   try {
-    const { username, password, name } = req.body;
-    
-    // Validation des entrées
-    if (!username || !password || !name) {
-      return res.status(400).json({ error: 'Tous les champs sont requis' });
-    }
 
     // Vérification de l'unicité du username
     const existingUser = await User.findOne({ username });
@@ -331,12 +333,15 @@ app.post('/api/register', async (req, res) => {
 
     // Hachage du mot de passe
     const hashedPassword = await bcrypt.hash(password, 12);
-    
+
+    const avatar = req.file ? `/uploads/${req.file.filename}` : null;
+
     // Création de l'utilisateur
-    const user = new User({ 
-      username, 
-      password: hashedPassword, 
-      name 
+    const user = new User({
+      username,
+      password: hashedPassword,
+      name,
+      avatar
     });
     await user.save();
 
@@ -418,11 +423,43 @@ app.get('/api/users', authenticate, async (req, res) => {
   try {
     const users = await User.find({ _id: { $ne: req.user._id } })
       .select('_id username name avatar');
-    res.json(users);
+
+    const enriched = await Promise.all(users.map(async (u) => {
+      const lastMsg = await Message.findOne({
+        $or: [
+          { sender: req.user._id, recipient: u._id },
+          { sender: u._id, recipient: req.user._id }
+        ]
+      })
+        .sort({ createdAt: -1 })
+        .select('content');
+
+      const unreadCount = await Message.countDocuments({
+        sender: u._id,
+        recipient: req.user._id,
+        read: false
+      });
+
+      return {
+        id: u._id,
+        username: u.username,
+        name: u.name,
+        avatar: u.avatar,
+        online: Boolean(connectedUsers[u.username]),
+        lastMessage: lastMsg ? lastMsg.content : null,
+        unreadCount
+      };
+    }));
+
+    res.json(enriched);
   } catch (err) {
     console.error('[GET USERS] Erreur:', err);
     res.status(500).json({ error: 'Erreur lors de la récupération des utilisateurs' });
   }
+});
+
+app.get('/api/users/me', authenticate, (req, res) => {
+  res.json(req.user);
 });
 
 app.post('/api/upload-avatar', authenticate, upload.single('avatar'), async (req, res) => {
@@ -506,9 +543,9 @@ app.post('/api/upload-file', authenticate, upload.single('file'), async (req, re
 // Créer un groupe
 app.post('/api/groups', authenticate, async (req, res) => {
   try {
-    const { name, avatar, members } = req.body;
+    const { name, avatar, usernames } = req.body;
 
-    if (!name || !Array.isArray(members)) {
+    if (!name || !Array.isArray(usernames)) {
       return res.status(400).json({ error: 'Nom et membres requis' });
     }
 
@@ -516,14 +553,15 @@ app.post('/api/groups', authenticate, async (req, res) => {
       return res.status(400).json({ error: 'Le nom doit contenir entre 3 et 50 caractères' });
     }
 
-    const uniqueMembers = Array.from(new Set(members.concat(req.user._id.toString())));
-    if (uniqueMembers.length < 2 || uniqueMembers.length > 100) {
-      return res.status(400).json({ error: 'Le groupe doit avoir entre 2 et 100 membres' });
+    const users = await User.find({ username: { $in: usernames } });
+    if (users.length !== usernames.length) {
+      return res.status(400).json({ error: 'Certains membres sont introuvables' });
     }
 
-    const users = await User.find({ _id: { $in: uniqueMembers } });
-    if (users.length !== uniqueMembers.length) {
-      return res.status(400).json({ error: 'Certains membres sont introuvables' });
+    const memberIds = users.map(u => u._id).concat(req.user._id);
+    const uniqueMembers = Array.from(new Set(memberIds.map(id => id.toString())));
+    if (uniqueMembers.length < 2 || uniqueMembers.length > 100) {
+      return res.status(400).json({ error: 'Le groupe doit avoir entre 2 et 100 membres' });
     }
 
     const group = new Group({
