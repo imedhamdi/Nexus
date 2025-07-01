@@ -530,6 +530,19 @@ button {
     height: 8px;
 }
 
+.typing-indicator-container {
+    font-size: 0.8rem;
+    color: var(--color-primary);
+    height: 16px;
+    transition: opacity 0.3s;
+}
+.typing-indicator-container.visible {
+    opacity: 1;
+}
+.typing-indicator-container.hidden {
+    opacity: 0;
+}
+
 .chat-actions {
     display: flex;
     gap: var(--spacing-sm);

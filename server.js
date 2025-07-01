@@ -692,6 +692,39 @@ app.patch('/api/groups/:id', authenticate, async (req, res) => {
   }
 });
 
+// Supprimer un membre d'un groupe (seul le créateur peut le faire)
+app.patch('/api/groups/:id/members', authenticate, async (req, res) => {
+  try {
+    if (!isValidObjectId(req.params.id) || !isValidObjectId(req.body.memberId)) {
+      return res.status(400).json({ error: 'ID invalide' });
+    }
+
+    const group = await Group.findById(req.params.id);
+    if (!group) {
+      return res.status(404).json({ error: 'Groupe non trouvé' });
+    }
+
+    // Seul le créateur peut supprimer des membres
+    if (!group.createdBy.equals(req.user._id)) {
+      return res.status(403).json({ error: 'Action non autorisée. Seul le créateur peut gérer les membres.' });
+    }
+
+    const memberIdToRemove = req.body.memberId;
+    // Le créateur ne peut pas se supprimer lui-même
+    if (group.createdBy.equals(memberIdToRemove)) {
+      return res.status(400).json({ error: 'Le créateur ne peut pas être supprimé du groupe.' });
+    }
+
+    group.members.pull(memberIdToRemove);
+    await group.save();
+
+    res.json({ success: true, members: group.members });
+  } catch (err) {
+    console.error('[REMOVE MEMBER] Erreur:', err);
+    res.status(500).json({ error: 'Erreur lors de la suppression du membre' });
+  }
+});
+
 // Lister les groupes de l'utilisateur
 app.get('/api/groups', authenticate, async (req, res) => {
   try {
@@ -823,7 +856,8 @@ app.get('/api/groups/:id/messages', authenticate, async (req, res) => {
     }
 
     const { page = 1, limit = 50 } = req.query;
-    const group = await Group.findById(req.params.id);
+    const group = await Group.findById(req.params.id)
+      .populate('members', 'username name avatar');
     if (!group) {
       return res.status(404).json({ error: 'Groupe non trouvé' });
     }
@@ -855,8 +889,16 @@ app.get('/api/groups/:id/messages', authenticate, async (req, res) => {
       edited: m.edited,
       deleted: m.deleted
     }));
+    const groupDetails = {
+      id: group._id,
+      name: group.name,
+      avatar: group.avatar,
+      members: group.members,
+      createdBy: group.createdBy,
+      memberCount: group.members.length
+    };
 
-    res.json(messages);
+    res.json({ group: groupDetails, messages });
   } catch (err) {
     console.error('[GET GROUP MESSAGES] Erreur:', err);
     res.status(500).json({ error: 'Erreur lors de la récupération des messages de groupe' });
