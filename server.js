@@ -1188,10 +1188,14 @@ io.on('connection', (socket) => {
         { sender, recipient: socket.user.id, read: false },
         { $set: { read: true } }
       );
-      callback({ success: true });
+      if (typeof callback === 'function') {
+        callback({ success: true });
+      }
     } catch (err) {
       console.error('[MARK READ] Erreur:', err);
-      callback({ success: false, error: 'Erreur lors du marquage des messages comme lus' });
+      if (typeof callback === 'function') {
+        callback({ success: false, error: 'Erreur lors du marquage des messages comme lus' });
+      }
     }
   });
 
@@ -1201,10 +1205,14 @@ io.on('connection', (socket) => {
         { group: groupId, 'readBy.user': { $ne: socket.user.id } },
         { $push: { readBy: { user: socket.user.id, readAt: new Date() } } }
       );
-      callback({ success: true });
+      if (typeof callback === 'function') {
+        callback({ success: true });
+      }
     } catch (err) {
       console.error('[MARK GROUP READ] Erreur:', err);
-      callback({ success: false, error: 'Erreur lors du marquage des messages' });
+      if (typeof callback === 'function') {
+        callback({ success: false, error: 'Erreur lors du marquage des messages' });
+      }
     }
   });
 });
