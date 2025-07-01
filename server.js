@@ -1008,17 +1008,53 @@ io.on('connection', (socket) => {
   });
 
   // Indicateur de frappe
-  socket.on('typing', ({ recipient }) => {
-    const sid = connectedUsers[recipient];
-    if (sid) {
-      io.to(sid).emit('typing', { sender: socket.user.username });
+  socket.on('typing', async ({ recipient, groupId }) => {
+    if (recipient) {
+      const sid = connectedUsers[recipient];
+      if (sid) {
+        io.to(sid).emit('typing', { sender: socket.user.username });
+      }
+    } else if (groupId) {
+      const group = await Group.findById(groupId);
+      if (group) {
+        group.members.forEach(memberId => {
+          if (memberId.toString() !== socket.user.id) {
+            User.findById(memberId).then(user => {
+              if (user) {
+                const sid = connectedUsers[user.username];
+                if (sid) {
+                  io.to(sid).emit('typing', { sender: socket.user.username, group: groupId });
+                }
+              }
+            });
+          }
+        });
+      }
     }
   });
 
-  socket.on('stop-typing', ({ recipient }) => {
-    const sid = connectedUsers[recipient];
-    if (sid) {
-      io.to(sid).emit('stop-typing', { sender: socket.user.username });
+  socket.on('stop-typing', async ({ recipient, groupId }) => {
+    if (recipient) {
+      const sid = connectedUsers[recipient];
+      if (sid) {
+        io.to(sid).emit('stop-typing', { sender: socket.user.username });
+      }
+    } else if (groupId) {
+      const group = await Group.findById(groupId);
+      if (group) {
+        group.members.forEach(memberId => {
+          if (memberId.toString() !== socket.user.id) {
+            User.findById(memberId).then(user => {
+              if(user) {
+                const sid = connectedUsers[user.username];
+                if (sid) {
+                  io.to(sid).emit('stop-typing', { sender: socket.user.username, group: groupId });
+                }
+              }
+            });
+          }
+        });
+      }
     }
   });
 

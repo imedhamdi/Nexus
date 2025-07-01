@@ -330,13 +330,20 @@ function setupAppListeners() {
   dom.messageInput.addEventListener('input', () => {
     const hasText = dom.messageInput.value.trim().length > 0;
     dom.sendBtn.disabled = !hasText;
-    
-    // Envoyer l'événement "typing"
-    if (hasText && state.currentChat) {
-      state.socket.emit('typing', { recipient: state.currentChat.id });
+
+    // Envoyer l'événement "typing" pour les discussions privées ou de groupe
+    if (hasText && (state.currentChat || state.currentGroup)) {
+      const payload = state.currentChat
+        ? { recipient: state.currentChat.id }
+        : { groupId: state.currentGroup.id };
+      state.socket.emit('typing', payload);
+
       clearTimeout(state.typingTimeout);
       state.typingTimeout = setTimeout(() => {
-        state.socket.emit('stop-typing', { recipient: state.currentChat.id });
+        const stopPayload = state.currentChat
+          ? { recipient: state.currentChat.id }
+          : { groupId: state.currentGroup.id };
+        state.socket.emit('stop-typing', stopPayload);
       }, config.typingTimeout);
     }
   });
@@ -462,7 +469,7 @@ async function loadContacts() {
     
     if (response.ok) {
       state.contacts = await response.json();
-      renderContactsModal();
+      renderPrivateChats();
     }
   } catch (err) {
     console.error('Erreur de chargement des contacts:', err);
@@ -475,6 +482,34 @@ async function loadContacts() {
  */
 function renderSidebarConversations() {
   // Future implementation
+}
+
+function renderPrivateChats() {
+  dom.contactsList.innerHTML = '';
+
+  state.contacts.forEach(contact => {
+    const contactEl = document.createElement('div');
+    contactEl.className = 'contact';
+    if (state.currentChat && state.currentChat.id === contact.id) contactEl.classList.add('active');
+    contactEl.dataset.id = contact.id;
+
+    contactEl.innerHTML = `
+      <div class="contact-avatar">
+        <img src="${contact.avatar || 'https://i.pravatar.cc/150'}" alt="Avatar de ${contact.name}">
+      </div>
+      <div class="contact-info">
+        <div class="contact-name">${contact.name}</div>
+        <div class="contact-last-msg">${contact.lastMessage || ''}</div>
+      </div>
+      ${contact.unreadCount ? `<div class="unread-count">${contact.unreadCount}</div>` : ''}
+    `;
+
+    contactEl.addEventListener('click', () => {
+      selectChat(contact);
+    });
+
+    dom.contactsList.appendChild(contactEl);
+  });
 }
 
 function renderContactsModal() {
@@ -574,6 +609,9 @@ async function selectChat(contact) {
   state.currentGroup = null;
 
   document.querySelectorAll('#groups-list .contact').forEach(c => c.classList.remove('active'));
+  document.querySelectorAll('#contacts-list .contact').forEach(c => c.classList.remove('active'));
+  const active = dom.contactsList.querySelector(`[data-id="${contact.id}"]`);
+  if (active) active.classList.add('active');
   
   // Mettre à jour l'interface
   dom.chatPartnerName.textContent = contact.name;
@@ -609,6 +647,7 @@ async function selectGroup(group) {
   state.currentChat = null;
 
   document.querySelectorAll('#groups-list .contact').forEach(c => c.classList.remove('active'));
+  document.querySelectorAll('#contacts-list .contact').forEach(c => c.classList.remove('active'));
   const active = dom.groupsList.querySelector(`[data-id="${group.id}"]`);
   if (active) active.classList.add('active');
 
@@ -1095,8 +1134,11 @@ function handleReactionUpdated({ id, reactions }) {
 /**
  * Gère l'indicateur de frappe
  */
-function handleTyping({ sender }) {
-  if (state.currentChat && sender === state.currentChat.username) {
+function handleTyping({ sender, group }) {
+  if (
+    (state.currentChat && sender === state.currentChat.username) ||
+    (state.currentGroup && group === state.currentGroup.id)
+  ) {
     state.typingUsers.add(sender);
     updateTypingIndicator();
   }
@@ -1105,18 +1147,23 @@ function handleTyping({ sender }) {
 /**
  * Gère l'arrêt de l'indicateur de frappe
  */
-function handleStopTyping({ sender }) {
-  state.typingUsers.delete(sender);
-  updateTypingIndicator();
+function handleStopTyping({ sender, group }) {
+  if (
+    (state.currentChat && sender === state.currentChat.username) ||
+    (state.currentGroup && group === state.currentGroup.id)
+  ) {
+    state.typingUsers.delete(sender);
+    updateTypingIndicator();
+  }
 }
 
 /**
  * Met à jour l'indicateur de frappe dans l'interface
  */
 function updateTypingIndicator() {
-  const partnerName = state.currentChat ? state.currentChat.name : 'Quelqu\'un';
   if (state.typingUsers.size > 0) {
-    dom.typingIndicatorContainer.textContent = `${partnerName} est en train d'écrire...`;
+    const users = Array.from(state.typingUsers).join(', ');
+    dom.typingIndicatorContainer.textContent = `${users} est en train d'écrire...`;
     dom.typingIndicatorContainer.classList.add('visible');
     dom.typingIndicatorContainer.classList.remove('hidden');
     dom.chatPartnerStatus.classList.add('hidden');
