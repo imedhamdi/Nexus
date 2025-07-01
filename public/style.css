@@ -105,6 +105,26 @@ button {
     display: none !important;
 }
 
+/* Boutons icône réutilisables */
+.icon-btn,
+.action-btn,
+.chat-action-btn,
+.message-action-btn {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border-radius: 50%;
+    color: var(--color-text-secondary);
+    transition: background-color var(--transition-fast), color var(--transition-fast);
+}
+.icon-btn:hover,
+.action-btn:hover,
+.chat-action-btn:hover,
+.message-action-btn:hover {
+    background-color: var(--color-surface-light);
+    color: var(--color-text-primary);
+}
+
 /* Scrollbar personnalisée */
 ::-webkit-scrollbar {
     width: 6px;
@@ -450,14 +470,14 @@ button {
 }
 .contact.active .contact-name { color: var(--color-text-inverted); }
 
-.contact-last-msg, .contact-time {
+.contact-last-msg {
     font-size: 0.85rem;
     color: var(--color-text-secondary);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
-.contact.active .contact-last-msg, .contact.active .contact-time { color: rgba(255, 255, 255, 0.8); }
+.contact.active .contact-last-msg { color: rgba(255, 255, 255, 0.8); }
 
 .unread-count {
     background-color: var(--color-primary);
@@ -550,20 +570,9 @@ button {
 
 .chat-action-btn {
     font-size: 1.2rem;
-    color: var(--color-text-secondary);
     padding: var(--spacing-sm);
-    border-radius: 50%;
     width: 40px;
     height: 40px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    transition: background-color var(--transition-fast), color var(--transition-fast);
-}
-
-.chat-action-btn:hover {
-    background-color: var(--color-surface-light);
-    color: var(--color-text-primary);
 }
 
 /* Messages Container */
@@ -681,15 +690,6 @@ button {
 .message-action-btn {
     width: 30px;
     height: 30px;
-    border-radius: 50%;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    color: var(--color-text-secondary);
-}
-.message-action-btn:hover {
-    background-color: var(--color-surface-light);
-    color: var(--color-text-primary);
 }
 
 
@@ -710,17 +710,7 @@ button {
     width: 44px;
     height: 44px;
     font-size: 1.2rem;
-    color: var(--color-text-secondary);
-    border-radius: 50%;
     flex-shrink: 0;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    transition: background-color var(--transition-fast), color var(--transition-fast);
-}
-.action-btn:hover {
-    background-color: var(--color-surface-light);
-    color: var(--color-text-primary);
 }
 
 .send-btn {
@@ -969,7 +959,6 @@ button {
 }
 .toast.success { border-color: var(--color-success); }
 .toast.error { border-color: var(--color-error); }
-.toast.warning { border-color: var(--color-warning); }
 
 
 /*-------------------------------------------------------------------
