@@ -875,6 +875,21 @@ io.on('connection', (socket) => {
     io.emit('users-updated', Object.keys(connectedUsers));
   });
 
+  // Indicateur de frappe
+  socket.on('typing', ({ recipient }) => {
+    const sid = connectedUsers[recipient];
+    if (sid) {
+      io.to(sid).emit('typing', { sender: socket.user.username });
+    }
+  });
+
+  socket.on('stop-typing', ({ recipient }) => {
+    const sid = connectedUsers[recipient];
+    if (sid) {
+      io.to(sid).emit('stop-typing', { sender: socket.user.username });
+    }
+  });
+
   // Gestion des messages
   socket.on('send-message', async ({ recipient, content, type = 'text', replyTo, expiresIn }, callback) => {
     try {
@@ -1043,6 +1058,80 @@ io.on('connection', (socket) => {
     } catch (err) {
       console.error('[ADD REACTION] Erreur:', err);
       callback({ success: false, error: 'Erreur lors de la réaction' });
+    }
+  });
+
+  // Modifier un message en temps réel
+  socket.on('edit-message', async ({ messageId, content }, callback) => {
+    try {
+      const message = await Message.findById(messageId);
+      if (!message) return callback({ success: false, error: 'Message non trouvé' });
+
+      if (message.sender.toString() !== socket.user.id) {
+        return callback({ success: false, error: 'Action non autorisée' });
+      }
+
+      message.editHistory.push({ content: message.content, editedAt: new Date() });
+      message.content = content;
+      message.edited = true;
+      await message.save();
+
+      const payload = { id: message._id, content: message.content, edited: message.edited };
+
+      if (message.recipient) {
+        const target = await User.findById(message.recipient);
+        const sid = connectedUsers[target.username];
+        if (sid) io.to(sid).emit('message-edited', payload);
+        const senderSid = connectedUsers[socket.user.username];
+        if (senderSid) io.to(senderSid).emit('message-edited', payload);
+      } else if (message.group) {
+        const group = await Group.findById(message.group).populate('members', 'username');
+        group.members.forEach(m => {
+          const sid = connectedUsers[m.username];
+          if (sid) io.to(sid).emit('message-edited', payload);
+        });
+      }
+
+      callback({ success: true });
+    } catch (err) {
+      console.error('[EDIT MESSAGE SOCKET] Erreur:', err);
+      callback({ success: false, error: 'Erreur lors de la modification du message' });
+    }
+  });
+
+  // Supprimer un message en temps réel
+  socket.on('delete-message', async ({ messageId }, callback) => {
+    try {
+      const message = await Message.findById(messageId);
+      if (!message) return callback({ success: false, error: 'Message non trouvé' });
+
+      if (message.sender.toString() !== socket.user.id) {
+        return callback({ success: false, error: 'Action non autorisée' });
+      }
+
+      message.deleted = true;
+      await message.save();
+
+      const payload = { id: message._id };
+
+      if (message.recipient) {
+        const target = await User.findById(message.recipient);
+        const sid = connectedUsers[target.username];
+        if (sid) io.to(sid).emit('message-deleted', payload);
+        const senderSid = connectedUsers[socket.user.username];
+        if (senderSid) io.to(senderSid).emit('message-deleted', payload);
+      } else if (message.group) {
+        const group = await Group.findById(message.group).populate('members', 'username');
+        group.members.forEach(m => {
+          const sid = connectedUsers[m.username];
+          if (sid) io.to(sid).emit('message-deleted', payload);
+        });
+      }
+
+      callback({ success: true });
+    } catch (err) {
+      console.error('[DELETE MESSAGE SOCKET] Erreur:', err);
+      callback({ success: false, error: 'Erreur lors de la suppression du message' });
     }
   });
 
