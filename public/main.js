@@ -1,1706 +1,1124 @@
-/**
- * Nexus Chat - Client JavaScript
- * Application de messagerie sécurisée avec WebSocket et WebRTC
- */
+// Variables globales
+let currentUser = null;
+let currentChat = null;
+let socket = null;
+let peerConnection = null;
+let localStream = null;
+let callData = null;
+let callInterval = null;
 
-// Configuration globale
-const config = {
-  apiBaseUrl: window.location.origin,
-  socketOptions: {
-    reconnection: true,
-    reconnectionAttempts: 5,
-    reconnectionDelay: 1000,
-    auth: {
-      token: localStorage.getItem('nexus_token')
+// DOM Elements
+const authContainer = document.getElementById('auth-container');
+const appContainer = document.getElementById('app-container');
+const loginForm = document.getElementById('login-form');
+const signupForm = document.getElementById('signup-form');
+const showSignup = document.getElementById('show-signup');
+const showLogin = document.getElementById('show-login');
+const loginBtn = document.getElementById('login-btn');
+const signupBtn = document.getElementById('signup-btn');
+const logoutBtn = document.getElementById('logout-btn');
+const messageInput = document.getElementById('message-input');
+const sendBtn = document.getElementById('send-btn');
+const messagesList = document.getElementById('messages-list');
+const contactsList = document.getElementById('contacts-list');
+const groupsList = document.getElementById('groups-list');
+const userAvatar = document.getElementById('user-avatar');
+const userName = document.getElementById('user-name');
+const chatName = document.getElementById('chat-name');
+const chatAvatar = document.getElementById('chat-avatar');
+const typingIndicator = document.getElementById('typing-indicator');
+const replyPreview = document.getElementById('reply-preview');
+const createGroupBtn = document.getElementById('create-group-btn');
+const groupModal = document.getElementById('group-modal');
+const closeGroupModal = document.getElementById('close-group-modal');
+const createGroupSubmit = document.getElementById('create-group-submit');
+const callModal = document.getElementById('call-modal');
+const incomingCallModal = document.getElementById('incoming-call-modal');
+const acceptCallBtn = document.getElementById('accept-call-btn');
+const declineCallBtn = document.getElementById('decline-call-btn');
+const endCallBtn = document.getElementById('end-call-btn');
+const muteBtn = document.getElementById('mute-btn');
+const videoBtn = document.getElementById('video-btn');
+const remoteVideo = document.getElementById('remote-video');
+const localVideo = document.getElementById('local-video');
+const audioCallBtn = document.getElementById('audio-call-btn');
+const videoCallBtn = document.getElementById('video-call-btn');
+const toastContainer = document.getElementById('toast-container');
+
+// Événements
+document.addEventListener('DOMContentLoaded', initApp);
+showSignup.addEventListener('click', toggleAuthForms);
+showLogin.addEventListener('click', toggleAuthForms);
+loginBtn.addEventListener('click', handleLogin);
+signupBtn.addEventListener('click', handleSignup);
+logoutBtn.addEventListener('click', handleLogout);
+messageInput.addEventListener('input', handleTyping);
+messageInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
     }
-  },
-  messageLimit: 50,
-  typingTimeout: 2000,
-  toastDuration: 5000
-};
+});
+sendBtn.addEventListener('click', sendMessage);
+createGroupBtn.addEventListener('click', () => groupModal.style.display = 'flex');
+closeGroupModal.addEventListener('click', () => groupModal.style.display = 'none');
+createGroupSubmit.addEventListener('click', createGroup);
+audioCallBtn.addEventListener('click', () => startCall(false));
+videoCallBtn.addEventListener('click', () => startCall(true));
+acceptCallBtn.addEventListener('click', acceptCall);
+declineCallBtn.addEventListener('click', declineCall);
+endCallBtn.addEventListener('click', endCall);
+muteBtn.addEventListener('click', toggleMute);
+videoBtn.addEventListener('click', toggleVideo);
 
-// Éléments DOM principaux
-const dom = {
-  authContainer: document.getElementById('auth-container'),
-  appContainer: document.getElementById('app-container'),
-  loginCard: document.getElementById('login-card'),
-  registerCard: document.getElementById('register-card'),
-  showRegister: document.getElementById('show-register'),
-  showLogin: document.getElementById('show-login'),
-  loginForm: document.getElementById('login-form'),
-  registerForm: document.getElementById('register-form'),
-  avatarInput: document.getElementById('avatar-input'),
-  avatarPreview: document.getElementById('avatar-preview'),
-  messageInput: document.getElementById('message-input'),
-  messagesContainer: document.getElementById('messages-container'),
-  privateChatsList: document.getElementById('private-chats-list'),
-  groupsList: document.getElementById('groups-list'),
-  welcomeScreen: document.getElementById('welcome-screen'),
-  loadingSpinner: document.getElementById('loading-spinner'),
-  logoutBtn: document.getElementById('logout-btn'),
-  sidebarSearch: document.getElementById('sidebar-search'),
-  userAvatar: document.getElementById('user-avatar'),
-  userName: document.getElementById('user-name'),
-  userUsername: document.getElementById('user-username'),
-  chatPartnerAvatar: document.getElementById('chat-partner-avatar'),
-  chatPartnerName: document.getElementById('chat-partner-name'),
-  chatPartnerStatus: document.getElementById('chat-partner-status-text'),
-  typingIndicatorContainer: document.getElementById('typing-indicator-container'),
-  callBtn: document.querySelector('.chat-action-btn.call'),
-  videoBtn: document.querySelector('.chat-action-btn.video'),
-  groupSettingsBtn: document.querySelector('.chat-action-btn.group-settings'),
-  sendBtn: document.getElementById('send-btn'),
-  replyPreview: document.getElementById('reply-preview'),
-  replySnippet: document.getElementById('reply-snippet'),
-  cancelReply: document.getElementById('cancel-reply'),
-  ttlSelect: document.getElementById('ttl-select'),
-  menuBtn: document.querySelector('.menu-btn'),
-  sidebar: document.querySelector('.sidebar'),
-  sidebarOverlay: document.querySelector('.sidebar-overlay'),
-  sidebarCloseBtn: document.querySelector('.sidebar-close-btn'),
-  newGroupBtn: document.getElementById('new-group-btn'),
-  groupModal: document.getElementById('group-modal'),
-  closeGroupModal: document.getElementById('close-group-modal'),
-  createGroupForm: document.getElementById('create-group-form'),
-  attachBtn: document.getElementById('attach-btn'),
-  fileInput: document.getElementById('file-input'),
-  contactsModal: document.getElementById('contacts-modal'),
-  closeContactsModal: document.getElementById('close-contacts-modal'),
-  modalContactsList: document.getElementById('modal-contacts-list'),
-  contactsLink: document.getElementById('contacts-link'),
-  settingsLink: document.getElementById('settings-link'),
-  callContainer: document.getElementById('call-container'),
-  callPreviewContainer: document.getElementById('call-preview-container'),
-  localVideo: document.getElementById('local-video'),
-  remoteVideo: document.getElementById('remote-video'),
-  previewVideo: document.getElementById('preview-video'),
-  hangupBtn: document.getElementById('hangup-btn'),
-  hangupPreviewBtn: document.getElementById('hangup-preview-btn'),
-  muteBtn: document.getElementById('mute-btn'),
-  videoBtn: document.getElementById('video-btn'),
-  callPartnerName: document.getElementById('call-partner-name'),
-  callStatus: document.getElementById('call-status'),
-  toastContainer: document.getElementById('toast-container'),
-  messageSound: document.getElementById('message-sound'),
-  callSound: document.getElementById('call-sound')
-};
-
-/**
- * Joue un élément audio avec une solution de secours utilisant Web Audio API
- */
-function playAudio(element) {
-  if (!element) return;
-  const playPromise = element.play();
-  if (playPromise && playPromise.catch) {
-    playPromise.catch(() => {
-      try {
-        const ctx = new (window.AudioContext || window.webkitAudioContext)();
-        const osc = ctx.createOscillator();
-        osc.type = 'sine';
-        osc.frequency.value = 440;
-        osc.connect(ctx.destination);
-        osc.start();
-        osc.stop(ctx.currentTime + 0.2);
-        osc.onended = () => ctx.close();
-      } catch (err) {
-        console.error('Audio fallback error:', err);
-      }
-    });
-  }
-}
-
-// État de l'application
-const state = {
-  currentUser: null,
-  currentChat: null,
-  currentGroup: null,
-  contacts: [],
-  groups: [],
-  messages: [],
-  typingUsers: new Set(),
-  replyTo: null,
-  socket: null,
-  peerConnection: null,
-  localStream: null,
-  remoteStream: null,
-  callData: null,
-  isCaller: false,
-  isMuted: false,
-  isVideoOff: false,
-  iceServers: []
-};
-
-function logout() {
-  localStorage.removeItem('nexus_token');
-  if (state.socket) {
-    state.socket.disconnect();
-  }
-  window.location.reload();
-}
-
-/**
- * Initialisation de l'application
- */
-function init() {
-  // Vérifier l'authentification au chargement
-  checkAuth();
-  
-  // Écouteurs d'événements pour l'authentification
-  setupAuthListeners();
-  
-  // Écouteurs d'événements pour l'interface principale
-  setupAppListeners();
-  
-  // Initialiser la configuration WebRTC
-  fetchWebRTCConfig();
-}
-
-/**
- * Vérifie si l'utilisateur est authentifié et charge l'interface appropriée
- */
-async function checkAuth() {
-  const token = localStorage.getItem('nexus_token');
-  if (!token) return;
-  
-  try {
-    const response = await fetch(`${config.apiBaseUrl}/api/users/me`, {
-      headers: {
-        'Authorization': `Bearer ${token}`
-      }
+// Initialisation de l'application
+function initApp() {
+    const token = localStorage.getItem('nexus-chat-token');
+    
+    if (token) {
+        validateToken(token);
+    } else {
+        authContainer.style.display = 'flex';
+        appContainer.style.display = 'none';
+    }
+    
+    // Gestion de l'avatar pour l'inscription
+    const avatarInput = document.getElementById('signup-avatar');
+    const avatarPreview = document.getElementById('avatar-preview');
+    
+    avatarInput.addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                avatarPreview.innerHTML = `<img src="${event.target.result}" alt="Avatar preview">`;
+            };
+            reader.readAsDataURL(file);
+        }
     });
     
-    if (response.ok) {
-      const user = await response.json();
-      state.currentUser = user;
-      showAppInterface();
-      connectSocket();
-    } else {
-      localStorage.removeItem('nexus_token');
-    }
-  } catch (err) {
-    console.error('Erreur de vérification du token:', err);
-    localStorage.removeItem('nexus_token');
-  }
+    // Gestion de l'avatar pour les groupes
+    const groupAvatarInput = document.getElementById('group-avatar');
+    const groupAvatarPreview = document.getElementById('group-avatar-preview');
+    
+    groupAvatarInput.addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                groupAvatarPreview.innerHTML = `<img src="${event.target.result}" alt="Group avatar preview">`;
+            };
+            reader.readAsDataURL(file);
+        }
+    });
 }
 
-/**
- * Configure les écouteurs d'événements pour l'authentification
- */
-function setupAuthListeners() {
-  // Basculer entre login et register
-  dom.showRegister.addEventListener('click', (e) => {
+// Basculer entre les formulaires de connexion et d'inscription
+function toggleAuthForms(e) {
     e.preventDefault();
-    dom.loginCard.classList.add('hidden');
-    dom.registerCard.classList.remove('hidden');
-  });
-  
-  dom.showLogin.addEventListener('click', (e) => {
-    e.preventDefault();
-    dom.registerCard.classList.add('hidden');
-    dom.loginCard.classList.remove('hidden');
-  });
-  
-  // Gestion du formulaire de login
-  dom.loginForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
+    loginForm.style.display = loginForm.style.display === 'none' ? 'block' : 'none';
+    signupForm.style.display = signupForm.style.display === 'none' ? 'block' : 'none';
+}
+
+// Valider le token JWT
+async function validateToken(token) {
+    try {
+        const response = await fetch('/api/users/me', {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        
+        if (response.ok) {
+            const user = await response.json();
+            currentUser = user;
+            setupApp(user);
+            connectSocket(token);
+        } else {
+            localStorage.removeItem('nexus-chat-token');
+            authContainer.style.display = 'flex';
+            appContainer.style.display = 'none';
+        }
+    } catch (error) {
+        console.error('Error validating token:', error);
+        localStorage.removeItem('nexus-chat-token');
+        authContainer.style.display = 'flex';
+        appContainer.style.display = 'none';
+    }
+}
+
+// Gérer la connexion
+async function handleLogin() {
     const username = document.getElementById('login-username').value;
     const password = document.getElementById('login-password').value;
     
-    try {
-      const response = await fetch(`${config.apiBaseUrl}/api/login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ username, password })
-      });
-      
-      if (response.ok) {
-        const { token, user } = await response.json();
-        localStorage.setItem('nexus_token', token);
-        state.currentUser = user;
-        showAppInterface();
-        connectSocket();
-      } else {
-        const { error } = await response.json();
-        showToast(error, 'error');
-      }
-    } catch (err) {
-      showToast('Erreur de connexion', 'error');
-      console.error('Login error:', err);
+    if (!username || !password) {
+        showToast('Veuillez remplir tous les champs');
+        return;
     }
-  });
-  
-  // Gestion du formulaire d'inscription
-  dom.registerForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const name = document.getElementById('register-name').value;
-    const username = document.getElementById('register-username').value;
-    const password = document.getElementById('register-password').value;
+    
+    try {
+        const response = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ username, password })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            localStorage.setItem('nexus-chat-token', data.token);
+            currentUser = data.user;
+            setupApp(data.user);
+            connectSocket(data.token);
+        } else {
+            showToast(data.message || 'Échec de la connexion');
+        }
+    } catch (error) {
+        console.error('Login error:', error);
+        showToast('Erreur lors de la connexion');
+    }
+}
 
+// Gérer l'inscription
+async function handleSignup() {
+    const name = document.getElementById('signup-name').value;
+    const username = document.getElementById('signup-username').value;
+    const password = document.getElementById('signup-password').value;
+    const avatarInput = document.getElementById('signup-avatar');
+    
+    if (!name || !username || !password) {
+        showToast('Veuillez remplir tous les champs obligatoires');
+        return;
+    }
+    
+    if (password.length < 6) {
+        showToast('Le mot de passe doit contenir au moins 6 caractères');
+        return;
+    }
+    
     const formData = new FormData();
     formData.append('name', name);
     formData.append('username', username);
     formData.append('password', password);
-    if (dom.avatarInput.files[0]) {
-      formData.append('avatar', dom.avatarInput.files[0]);
-    }
-
-    try {
-      const response = await fetch(`${config.apiBaseUrl}/api/register`, {
-        method: 'POST',
-        body: formData
-      });
-      
-      if (response.ok) {
-        const { token, user } = await response.json();
-        localStorage.setItem('nexus_token', token);
-        state.currentUser = user;
-        showAppInterface();
-        connectSocket();
-      } else {
-        const { error } = await response.json();
-        showToast(error, 'error');
-      }
-    } catch (err) {
-      showToast('Erreur d\'inscription', 'error');
-      console.error('Register error:', err);
-    }
-  });
-  
-  // Gestion de l'upload d'avatar
-  dom.avatarInput.addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
     
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      dom.avatarPreview.src = event.target.result;
-    };
-    reader.readAsDataURL(file);
-  });
-}
-
-/**
- * Configure les écouteurs d'événements pour l'interface principale
- */
-function setupAppListeners() {
-  // Menu mobile
-  dom.menuBtn.addEventListener('click', () => {
-    dom.sidebar.classList.add('active');
-    dom.sidebarOverlay.classList.add('active');
-  });
-  
-  dom.sidebarCloseBtn.addEventListener('click', () => {
-    dom.sidebar.classList.remove('active');
-    dom.sidebarOverlay.classList.remove('active');
-  });
-  
-  dom.sidebarOverlay.addEventListener('click', () => {
-    dom.sidebar.classList.remove('active');
-    dom.sidebarOverlay.classList.remove('active');
-  });
-
-  // Gestion de l'attachement de fichier
-  dom.attachBtn.addEventListener('click', () => {
-    dom.fileInput.click();
-  });
-
-  dom.fileInput.addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      uploadFile(file);
+    if (avatarInput.files[0]) {
+        formData.append('avatar', avatarInput.files[0]);
     }
-    e.target.value = '';
-  });
-
-  // Ouverture de la modale des contacts
-  dom.contactsLink.addEventListener('click', (e) => {
-    e.preventDefault();
-    dom.contactsModal.classList.add('active');
-    dom.contactsModal.classList.remove('hidden');
-  });
-
-  dom.closeContactsModal.addEventListener('click', () => {
-    dom.contactsModal.classList.remove('active');
-    dom.contactsModal.classList.add('hidden');
-  });
-
-  dom.contactsModal.addEventListener('click', (e) => {
-    if (e.target === dom.contactsModal) {
-      dom.contactsModal.classList.remove('active');
-      dom.contactsModal.classList.add('hidden');
-    }
-  });
-
-  dom.settingsLink.addEventListener('click', (e) => {
-    e.preventDefault();
-    showToast('Fonctionnalité à venir');
-  });
-
-  dom.logoutBtn.addEventListener('click', (e) => {
-    e.preventDefault();
-    logout();
-  });
-
-  dom.sidebarSearch.addEventListener('input', (e) => {
-    const searchTerm = e.target.value.toLowerCase();
-
-    const filterList = (listSelector) => {
-      document.querySelectorAll(listSelector).forEach(item => {
-        const name = item.querySelector('.contact-name').textContent.toLowerCase();
-        if (name.includes(searchTerm)) {
-          item.style.display = 'flex';
+    
+    try {
+        const response = await fetch('/api/auth/signup', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            localStorage.setItem('nexus-chat-token', data.token);
+            currentUser = data.user;
+            setupApp(data.user);
+            connectSocket(data.token);
+            showToast('Inscription réussie!');
         } else {
-          item.style.display = 'none';
+            showToast(data.message || 'Échec de l\'inscription');
         }
-      });
-    };
-
-    filterList('#private-chats-list .contact');
-    filterList('#groups-list .contact');
-  });
-  
-  // Gestion de l'envoi de message
-  dom.messageInput.addEventListener('input', () => {
-    const hasText = dom.messageInput.value.trim().length > 0;
-    dom.sendBtn.disabled = !hasText;
-
-    // Envoyer l'événement "typing" pour les discussions privées ou de groupe
-    if (hasText && (state.currentChat || state.currentGroup)) {
-      const payload = state.currentChat
-        ? { recipient: state.currentChat.id }
-        : { groupId: state.currentGroup.id };
-      state.socket.emit('typing', payload);
-
-      clearTimeout(state.typingTimeout);
-      state.typingTimeout = setTimeout(() => {
-        const stopPayload = state.currentChat
-          ? { recipient: state.currentChat.id }
-          : { groupId: state.currentGroup.id };
-        state.socket.emit('stop-typing', stopPayload);
-      }, config.typingTimeout);
+    } catch (error) {
+        console.error('Signup error:', error);
+        showToast('Erreur lors de l\'inscription');
     }
-  });
-  
-  dom.messageInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      if (dom.messageInput.value.trim() && !dom.sendBtn.disabled) {
-        sendMessage();
-      }
+}
+
+// Gérer la déconnexion
+function handleLogout() {
+    if (socket) {
+        socket.disconnect();
     }
-  });
-  
-  dom.sendBtn.addEventListener('click', sendMessage);
-  
-  // Annuler la réponse à un message
-  dom.cancelReply.addEventListener('click', () => {
-    state.replyTo = null;
-    dom.replyPreview.classList.add('hidden');
-  });
-  
-  // Nouveau groupe
-  dom.newGroupBtn.addEventListener('click', () => {
-    dom.groupModal.classList.add('active');
-  });
-  
-  dom.closeGroupModal.addEventListener('click', () => {
-    dom.groupModal.classList.remove('active');
-  });
-  
-  dom.createGroupForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const name = document.getElementById('group-name').value;
-    const avatar = document.getElementById('group-avatar').value;
-    const members = document.getElementById('group-members').value
-      .split(',')
-      .map(m => m.trim())
-      .filter(m => m.length > 0);
     
-    try {
-      const response = await fetch(`${config.apiBaseUrl}/api/groups`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('nexus_token')}`
-        },
-        body: JSON.stringify({ name, avatar, usernames: members })
-      });
-      
-      if (response.ok) {
-        dom.groupModal.classList.remove('active');
-        dom.createGroupForm.reset();
-        showToast('Groupe créé avec succès', 'success');
-        loadGroups();
-      } else {
-        const { error } = await response.json();
-        showToast(error, 'error');
-      }
-    } catch (err) {
-      showToast('Erreur lors de la création du groupe', 'error');
-      console.error('Create group error:', err);
+    if (peerConnection) {
+        peerConnection.close();
+        peerConnection = null;
     }
-  });
-  
-  // Appels WebRTC
-  dom.callBtn.addEventListener('click', () => {
-    startCall(false);
-  });
-
-  dom.videoBtn.addEventListener('click', () => {
-    startCall(true);
-  });
-
-  dom.groupSettingsBtn.addEventListener('click', () => {
-    if (state.currentGroup) {
-      alert(`Gestion du groupe: ${state.currentGroup.name}`);
-      console.log('Membres:', state.currentGroup.members);
+    
+    if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+        localStream = null;
     }
-  });
-  
-  dom.hangupBtn.addEventListener('click', endCall);
-  dom.hangupPreviewBtn.addEventListener('click', endCall);
-  dom.muteBtn.addEventListener('click', toggleMute);
-  dom.videoBtn.addEventListener('click', toggleVideo);
+    
+    localStorage.removeItem('nexus-chat-token');
+    currentUser = null;
+    currentChat = null;
+    
+    authContainer.style.display = 'flex';
+    appContainer.style.display = 'none';
+    
+    // Réinitialiser les formulaires
+    document.getElementById('login-username').value = '';
+    document.getElementById('login-password').value = '';
+    document.getElementById('signup-name').value = '';
+    document.getElementById('signup-username').value = '';
+    document.getElementById('signup-password').value = '';
+    document.getElementById('signup-avatar').value = '';
+    document.getElementById('avatar-preview').innerHTML = '';
 }
 
-/**
- * Affiche l'interface principale de l'application
- */
-function showAppInterface() {
-  dom.authContainer.classList.add('hidden');
-  dom.appContainer.classList.remove('hidden');
-  
-  // Charger les données utilisateur
-  loadUserData();
-  
-  // Charger les contacts et groupes
-  loadContacts();
-  loadGroups();
+// Configurer l'application après connexion
+function setupApp(user) {
+    authContainer.style.display = 'none';
+    appContainer.style.display = 'flex';
+    
+    // Mettre à jour les informations de l'utilisateur
+    userName.textContent = user.name;
+    
+    if (user.avatar) {
+        userAvatar.innerHTML = `<img src="${user.avatar}" alt="${user.name}">`;
+    } else {
+        userAvatar.textContent = user.name.charAt(0).toUpperCase();
+    }
+    
+    // Charger les contacts et les groupes
+    loadContacts();
+    loadGroups();
 }
 
-/**
- * Charge les données de l'utilisateur connecté
- */
-async function loadUserData() {
-  if (!state.currentUser) return;
-  
-  dom.userName.textContent = state.currentUser.name;
-  dom.userUsername.textContent = `@${state.currentUser.username}`;
-  dom.userAvatar.src = state.currentUser.avatar || 'https://i.pravatar.cc/150';
+// Connecter le socket
+function connectSocket(token) {
+    socket = io({
+        auth: {
+            token: token
+        }
+    });
+    
+    // Écouter les événements du socket
+    socket.on('connect', () => {
+        console.log('Connecté au serveur Socket.IO');
+    });
+    
+    socket.on('disconnect', () => {
+        console.log('Déconnecté du serveur Socket.IO');
+    });
+    
+    socket.on('error', (error) => {
+        console.error('Erreur Socket.IO:', error);
+    });
+    
+    socket.on('new-message', (message) => {
+        if (currentChat && 
+            ((message.sender._id === currentChat._id && message.receiver === currentUser._id) || 
+             (message.receiver._id === currentChat._id && message.sender._id === currentUser._id) ||
+             (message.group && message.group._id === currentChat._id))) {
+            // Ajouter le message à la discussion actuelle
+            appendMessage(message);
+        } else {
+            // Afficher une notification
+            showNewMessageNotification(message);
+        }
+        
+        // Mettre à jour la liste des contacts/groups
+        if (message.group) {
+            loadGroups();
+        } else {
+            loadContacts();
+        }
+    });
+    
+    socket.on('typing', ({ from, isTyping }) => {
+        if (currentChat && from === currentChat._id) {
+            typingIndicator.textContent = isTyping ? `${currentChat.name} est en train d'écrire...` : '';
+            typingIndicator.style.display = isTyping ? 'block' : 'none';
+        }
+    });
+    
+    socket.on('presence', ({ userId, isOnline }) => {
+        updateUserStatus(userId, isOnline);
+    });
+    
+    socket.on('call-request', ({ from, name, avatar, isVideo }) => {
+        showIncomingCall(from, name, avatar, isVideo);
+    });
+    
+    socket.on('call-accepted', async ({ answer }) => {
+        try {
+            await peerConnection.setRemoteDescription(answer);
+            console.log('Call accepted - remote description set');
+        } catch (error) {
+            console.error('Error setting remote description:', error);
+            endCall();
+        }
+    });
+    
+    socket.on('ice-candidate', ({ candidate }) => {
+        if (peerConnection && candidate) {
+            peerConnection.addIceCandidate(new RTCIceCandidate(candidate))
+                .catch(error => console.error('Error adding ICE candidate:', error));
+        }
+    });
+    
+    socket.on('call-ended', () => {
+        endCall();
+    });
 }
 
-/**
- * Charge la liste des contacts
- */
+// Charger les contacts
 async function loadContacts() {
-  try {
-    const response = await fetch(`${config.apiBaseUrl}/api/users`, {
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('nexus_token')}`
-      }
-    });
-    
-    if (response.ok) {
-      state.contacts = await response.json();
-      renderPrivateChats();
-      renderContactsModal();
-    }
-  } catch (err) {
-    console.error('Erreur de chargement des contacts:', err);
-  }
-}
-
-/**
- * Affiche les conversations récentes dans la sidebar
- * (à implémenter ultérieurement)
- */
-function renderSidebarConversations() {
-  // Future implementation
-}
-
-function renderPrivateChats() {
-  dom.privateChatsList.innerHTML = '';
-  if (!state.contacts || state.contacts.length === 0) return;
-
-  const recentContacts = state.contacts
-    .filter(c => c.lastMessage)
-    .sort((a, b) => new Date(b.lastMessageDate) - new Date(a.lastMessageDate));
-
-  recentContacts.forEach(contact => {
-    const chatEl = document.createElement('div');
-    chatEl.className = 'contact';
-    if (state.currentChat && state.currentChat.id === contact.id) chatEl.classList.add('active');
-    chatEl.dataset.id = contact.id;
-    chatEl.innerHTML = `
-      <div class="contact-avatar">
-        <img src="${contact.avatar || 'https://i.pravatar.cc/150'}" alt="Avatar de ${contact.name}">
-        <span class="contact-status ${contact.online ? 'online' : 'offline'}"></span>
-      </div>
-      <div class="contact-info">
-        <div class="contact-name">${contact.name}</div>
-        <div class="contact-last-msg">${contact.lastMessage || ''}</div>
-      </div>
-      ${contact.unreadCount > 0 ? `<div class="unread-count">${contact.unreadCount}</div>` : ''}
-    `;
-
-    chatEl.addEventListener('click', () => selectChat(contact));
-    dom.privateChatsList.appendChild(chatEl);
-  });
-}
-
-function renderContactsModal() {
-  dom.modalContactsList.innerHTML = '';
-  if (!state.contacts || state.contacts.length === 0) {
-    dom.modalContactsList.innerHTML = '<p>Aucun contact trouvé.</p>';
-    return;
-  }
-
-  state.contacts.forEach(contact => {
-    const contactEl = document.createElement('div');
-    contactEl.className = 'modal-contact-item';
-    contactEl.dataset.id = contact.id;
-
-    contactEl.innerHTML = `
-        <div class="contact-avatar">
-            <img src="${contact.avatar || 'https://i.pravatar.cc/150'}" alt="Avatar de ${contact.name}">
-        </div>
-        <div class="contact-info">
-            <div class="contact-name">${contact.name}</div>
-            <div class="contact-username">@${contact.username}</div>
-        </div>
-        <div class="contact-status-indicator">
-            <span class="status-dot ${contact.online ? 'online' : 'offline'}"></span>
-            <span>${contact.online ? 'En ligne' : 'Hors ligne'}</span>
-        </div>
-    `;
-
-    contactEl.addEventListener('click', () => {
-      const selectedContact = state.contacts.find(c => c.id === contact.id);
-      if (selectedContact) {
-        selectChat(selectedContact);
-        dom.contactsModal.classList.remove('active');
-        dom.contactsModal.classList.add('hidden');
-      }
-    });
-
-    dom.modalContactsList.appendChild(contactEl);
-  });
-}
-
-/**
- * Charge la liste des groupes
- */
-async function loadGroups() {
-  try {
-    const response = await fetch(`${config.apiBaseUrl}/api/groups`, {
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('nexus_token')}`
-      }
-    });
-    
-    if (response.ok) {
-      state.groups = await response.json();
-      renderGroups();
-    }
-  } catch (err) {
-    console.error('Erreur de chargement des groupes:', err);
-  }
-}
-
-/**
- * Affiche la liste des groupes dans le DOM
- */
-function renderGroups() {
-  dom.groupsList.innerHTML = '';
-
-  state.groups.forEach(group => {
-    const groupEl = document.createElement('div');
-    groupEl.className = 'contact';
-    if (state.currentGroup && state.currentGroup.id === group.id) groupEl.classList.add('active');
-    groupEl.dataset.id = group.id;
-    groupEl.innerHTML = `
-      <div class="contact-avatar">
-        <img src="${group.avatar || 'https://i.pravatar.cc/150'}" alt="Avatar du groupe ${group.name}">
-      </div>
-      <div class="contact-info">
-        <div class="contact-name">${group.name}</div>
-        <div class="contact-last-msg">${group.lastMessage || ''}</div>
-      </div>
-      ${group.unreadCount ? `<div class="unread-count">${group.unreadCount}</div>` : ''}
-    `;
-    
-    groupEl.addEventListener('click', () => {
-      selectGroup(group);
-    });
-    
-    dom.groupsList.appendChild(groupEl);
-  });
-}
-
-/**
- * Sélectionne une conversation avec un contact
- */
-async function selectChat(contact) {
-  state.currentChat = contact;
-  state.currentGroup = null;
-
-  dom.welcomeScreen.classList.add('hidden');
-  dom.messagesContainer.innerHTML = '';
-  dom.loadingSpinner.classList.remove('hidden');
-
-  document.querySelectorAll('#groups-list .contact, #private-chats-list .contact').forEach(c => c.classList.remove('active'));
-  const active = dom.privateChatsList.querySelector(`[data-id="${contact.id}"]`);
-  if (active) active.classList.add('active');
-  
-  // Mettre à jour l'interface
-  dom.chatPartnerName.textContent = contact.name;
-  dom.chatPartnerAvatar.src = contact.avatar || 'https://i.pravatar.cc/150';
-  dom.chatPartnerStatus.querySelector('span').textContent = contact.online ? 'En ligne' : 'Hors ligne';
-  dom.chatPartnerStatus.querySelector('.status-dot').className = `status-dot ${contact.online ? 'online' : 'offline'}`;
-
-  dom.callBtn.classList.remove('hidden');
-  dom.videoBtn.classList.remove('hidden');
-  dom.groupSettingsBtn.classList.add('hidden');
-
-  state.typingUsers.clear();
-  updateTypingIndicator();
-  
-  // Charger les messages
-  await loadMessages(contact.id);
-  dom.loadingSpinner.classList.add('hidden');
-  
-  // Marquer les messages comme lus
-  if (state.socket) {
-    state.socket.emit('mark-messages-read', { sender: contact.id });
-  }
-  
-  // Fermer la sidebar sur mobile
-  dom.sidebar.classList.remove('active');
-  dom.sidebarOverlay.classList.remove('active');
-}
-
-/**
- * Sélectionne une conversation de groupe
- */
-async function selectGroup(group) {
-  state.currentGroup = group;
-  state.currentChat = null;
-
-  dom.welcomeScreen.classList.add('hidden');
-  dom.messagesContainer.innerHTML = '';
-  dom.loadingSpinner.classList.remove('hidden');
-
-  document.querySelectorAll('#groups-list .contact, #private-chats-list .contact').forEach(c => c.classList.remove('active'));
-  const active = dom.groupsList.querySelector(`[data-id="${group.id}"]`);
-  if (active) active.classList.add('active');
-
-  
-  // Mettre à jour l'interface
-  dom.chatPartnerName.textContent = group.name;
-  dom.chatPartnerAvatar.src = group.avatar || 'https://i.pravatar.cc/150';
-  dom.chatPartnerStatus.querySelector('span').textContent = `${group.memberCount} membres`;
-  dom.chatPartnerStatus.querySelector('.status-dot').className = 'status-dot';
-
-  dom.callBtn.classList.add('hidden');
-  dom.videoBtn.classList.add('hidden');
-  dom.groupSettingsBtn.classList.remove('hidden');
-
-  state.typingUsers.clear();
-  updateTypingIndicator();
-  
-  // Charger les messages
-  await loadMessages(group.id, true);
-  dom.loadingSpinner.classList.add('hidden');
-  
-  // Marquer les messages comme lus
-  if (state.socket) {
-    state.socket.emit('mark-group-messages-read', { groupId: group.id });
-  }
-  
-  // Fermer la sidebar sur mobile
-  dom.sidebar.classList.remove('active');
-  dom.sidebarOverlay.classList.remove('active');
-}
-
-/**
- * Charge les messages pour une conversation
- */
-async function loadMessages(partnerId, isGroup = false) {
-  try {
-    const url = isGroup
-      ? `${config.apiBaseUrl}/api/groups/${partnerId}/messages`
-      : `${config.apiBaseUrl}/api/messages?partner=${partnerId}`;
-    
-    const response = await fetch(url, {
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('nexus_token')}`
-      }
-    });
-    
-    if (response.ok) {
-      const data = await response.json();
-      if (isGroup) {
-        state.messages = data.messages;
-        if (state.currentGroup && state.currentGroup.id === data.group.id) {
-          Object.assign(state.currentGroup, {
-            members: data.group.members,
-            memberCount: data.group.memberCount,
-            createdBy: data.group.createdBy
-          });
-        }
-      } else {
-        state.messages = data;
-      }
-      renderMessages();
-      scrollToBottom();
-    }
-  } catch (err) {
-    console.error('Erreur de chargement des messages:', err);
-  }
-}
-
-/**
- * Affiche les messages dans le DOM
- */
-function renderMessages() {
-  dom.messagesContainer.innerHTML = '';
-  
-  if (state.messages.length === 0) {
-    const emptyMsg = document.createElement('div');
-    emptyMsg.className = 'empty-messages';
-    emptyMsg.textContent = 'Aucun message pour le moment. Envoyez le premier message !';
-    dom.messagesContainer.appendChild(emptyMsg);
-    return;
-  }
-  
-  let currentDate = null;
-  
-  state.messages.forEach((message, index) => {
-    // Ajouter un séparateur de date si nécessaire
-    const messageDate = new Date(message.createdAt).toDateString();
-    if (messageDate !== currentDate) {
-      currentDate = messageDate;
-      const dateSeparator = document.createElement('div');
-      dateSeparator.className = 'date-separator';
-      dateSeparator.textContent = formatDate(message.createdAt);
-      dom.messagesContainer.appendChild(dateSeparator);
-    }
-    
-    const messageEl = document.createElement('div');
-    messageEl.className = `message ${message.sender === state.currentUser.username ? 'sent' : 'received'}`;
-    messageEl.setAttribute('role', 'listitem');
-    messageEl.dataset.id = message.id;
-    
-    let contentHTML = '';
-    if (message.deleted) {
-      contentHTML = '<div class="message-content deleted">Message supprimé</div>';
-    } else if (message.type === 'text') {
-      contentHTML = `<div class="message-content">${escapeHtml(message.content)}</div>`;
-    } else if (message.type === 'image') {
-      contentHTML = `
-        <div class="message-content">
-          <img src="${message.fileUrl}" alt="Image envoyée" class="message-image">
-        </div>
-      `;
-    } else {
-      contentHTML = `
-        <div class="message-content">
-          <div class="message-file">
-            <i class="fas fa-file-alt"></i>
-            <a href="${message.fileUrl}" download>${message.content}</a>
-          </div>
-        </div>
-      `;
-    }
-    
-    // Ajouter la réponse si elle existe
-    if (message.replyTo && !message.deleted) {
-      contentHTML = `
-        <div class="reply-indicator">En réponse à: ${message.replySnippet || ''}</div>
-        ${contentHTML}
-      `;
-    }
-    
-    // Ajouter les réactions si elles existent
-    if (message.reactions && Object.keys(message.reactions).length > 0) {
-      const reactionsHTML = Object.entries(message.reactions)
-        .map(([emoji, users]) => {
-          const userReacted = users.includes(state.currentUser.id);
-          return `<span class="reaction ${userReacted ? 'user-reacted' : ''}" data-emoji="${emoji}">${emoji} ${users.length}</span>`;
-        })
-        .join('');
-      
-      contentHTML += `<div class="reactions">${reactionsHTML}</div>`;
-    }
-    
-    messageEl.innerHTML = `
-      <div class="message-wrapper">
-        ${contentHTML}
-        <div class="message-info">
-          <span class="timestamp">${formatTime(message.createdAt)}</span>
-          ${message.edited ? '<span class="edited">(modifié)</span>' : ''}
-          ${message.sender === state.currentUser.username ? `<i class="fas fa-check read-receipt ${message.read ? 'read' : ''}"></i>` : ''}
-        </div>
-      </div>
-    `;
-    
-    // Ajouter les actions pour les messages envoyés
-    if (message.sender === state.currentUser.username && !message.deleted) {
-      const actions = document.createElement('div');
-      actions.className = 'message-actions';
-      actions.innerHTML = `
-        <button class="message-action-btn" aria-label="Répondre" data-action="reply">
-          <i class="fas fa-reply"></i>
-        </button>
-        <button class="message-action-btn" aria-label="Réaction" data-action="react">
-          <i class="fas fa-smile"></i>
-        </button>
-        ${message.type === 'text' ? `
-          <button class="message-action-btn" aria-label="Modifier" data-action="edit">
-            <i class="fas fa-edit"></i>
-          </button>
-        ` : ''}
-        <button class="message-action-btn" aria-label="Supprimer" data-action="delete">
-          <i class="fas fa-trash"></i>
-        </button>
-      `;
-      
-      actions.querySelectorAll('button').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          handleMessageAction(message, btn.dataset.action, btn);
+    try {
+        const response = await fetch('/api/users/contacts', {
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('nexus-chat-token')}`
+            }
         });
-      });
-      
-      messageEl.querySelector('.message-wrapper').appendChild(actions);
-    }
-    
-    // Gérer les réactions pour les messages reçus
-    if (message.sender !== state.currentUser.username && !message.deleted) {
-      messageEl.addEventListener('click', (e) => {
-        if (e.target.classList.contains('reaction')) {
-          const emoji = e.target.dataset.emoji;
-          state.socket.emit('add-reaction', { messageId: message.id, emoji });
-        }
-      });
-    }
-    
-    dom.messagesContainer.appendChild(messageEl);
-  });
-}
-
-/**
- * Gère les actions sur les messages (répondre, modifier, supprimer, etc.)
- */
-function handleMessageAction(message, action, btn) {
-  switch (action) {
-    case 'reply':
-      state.replyTo = message.id;
-      dom.replySnippet.textContent = message.content.substring(0, 50) + (message.content.length > 50 ? '...' : '');
-      dom.replyPreview.classList.remove('hidden');
-      dom.messageInput.focus();
-      break;
-      
-    case 'react':
-      const picker = document.createElement('div');
-      picker.className = 'reaction-picker';
-      picker.style.background = '#333';
-      picker.style.padding = '4px';
-      picker.style.borderRadius = '6px';
-      picker.style.display = 'flex';
-      picker.style.gap = '4px';
-      ['👍','❤️','😂','😢','😮'].forEach(em => {
-        const span = document.createElement('span');
-        span.className = 'reaction-option';
-        span.textContent = em;
-        span.style.cursor = 'pointer';
-        span.addEventListener('click', () => {
-          state.socket.emit('add-reaction', { messageId: message.id, emoji: em });
-          picker.remove();
-        });
-        picker.appendChild(span);
-      });
-      document.body.appendChild(picker);
-      const rect = btn.getBoundingClientRect();
-      picker.style.position = 'absolute';
-      picker.style.left = `${rect.left}px`;
-      picker.style.top = `${rect.top - 40}px`;
-      const remove = (e) => {
-        if (!picker.contains(e.target)) {
-          picker.remove();
-          document.removeEventListener('click', remove);
-        }
-      };
-      setTimeout(() => document.addEventListener('click', remove));
-      break;
-      
-    case 'edit':
-      const messageEl = document.querySelector(`.message[data-id="${message.id}"]`);
-      const contentEl = messageEl.querySelector('.message-content');
-      
-      const input = document.createElement('textarea');
-      input.className = 'message-edit-input';
-      input.value = message.content;
-      
-      contentEl.innerHTML = '';
-      contentEl.appendChild(input);
-      input.focus();
-      
-      const saveEdit = () => {
-        const newContent = input.value.trim();
-        if (newContent && newContent !== message.content) {
-          state.socket.emit('edit-message', { 
-            messageId: message.id, 
-            content: newContent 
-          });
+        
+        if (response.ok) {
+            const contacts = await response.json();
+            renderContacts(contacts);
         } else {
-          renderMessages();
+            console.error('Failed to load contacts');
         }
-      };
-      
-      input.addEventListener('blur', saveEdit);
-      input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-          e.preventDefault();
-          saveEdit();
-        }
-      });
-      break;
-      
-    case 'delete':
-      if (confirm('Voulez-vous vraiment supprimer ce message ?')) {
-        state.socket.emit('delete-message', { messageId: message.id });
-      }
-      break;
-  }
+    } catch (error) {
+        console.error('Error loading contacts:', error);
+    }
 }
 
-/**
- * Envoie un message
- */
-function sendMessage() {
-  const content = dom.messageInput.value.trim();
-  if (!content || (!state.currentChat && !state.currentGroup)) return;
-  
-  const expiresIn = dom.ttlSelect.value ? parseInt(dom.ttlSelect.value) : null;
-  
-  if (state.currentChat) {
-    // Message privé
-    state.socket.emit('send-message', {
-      recipient: state.currentChat.id,
-      content,
-      replyTo: state.replyTo,
-      expiresIn
+// Afficher les contacts
+function renderContacts(contacts) {
+    contactsList.innerHTML = '';
+    
+    contacts.forEach(contact => {
+        const lastMessage = contact.lastMessage ? 
+            (contact.lastMessage.sender._id === currentUser._id ? 
+             `Vous: ${contact.lastMessage.content}` : 
+             contact.lastMessage.content) : 
+            'Aucun message';
+        
+        const contactItem = document.createElement('li');
+        contactItem.className = `contact-item ${currentChat?._id === contact._id ? 'active' : ''}`;
+        contactItem.innerHTML = `
+            <div class="contact-avatar">
+                ${contact.avatar ? `<img src="${contact.avatar}" alt="${contact.name}">` : contact.name.charAt(0).toUpperCase()}
+                ${contact.online ? '<span class="online-dot"></span>' : ''}
+            </div>
+            <div class="contact-info">
+                <h3>${contact.name}</h3>
+                <p>${lastMessage}</p>
+            </div>
+            <div class="contact-meta">
+                ${contact.lastMessage ? `<span class="time">${formatTime(contact.lastMessage.createdAt)}</span>` : ''}
+                ${contact.unreadCount > 0 ? `<span class="badge">${contact.unreadCount}</span>` : ''}
+            </div>
+        `;
+        
+        contactItem.addEventListener('click', () => openChat(contact, false));
+        contactsList.appendChild(contactItem);
     });
-  } else if (state.currentGroup) {
-    // Message de groupe
-    state.socket.emit('send-group-message', {
-      groupId: state.currentGroup.id,
-      content,
-      replyTo: state.replyTo,
-      expiresIn
-    });
-  }
-  
-  // Réinitialiser l'interface
-  dom.messageInput.value = '';
-  dom.sendBtn.disabled = true;
-  state.replyTo = null;
-  dom.replyPreview.classList.add('hidden');
 }
 
-/**
- * Upload un fichier dans la conversation courante
- */
-async function uploadFile(file) {
-  if (!state.currentChat && !state.currentGroup) {
-    showToast('Sélectionnez une conversation', 'error');
-    return;
-  }
+// Charger les groupes
+async function loadGroups() {
+    try {
+        const response = await fetch('/api/groups', {
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('nexus-chat-token')}`
+            }
+        });
+        
+        if (response.ok) {
+            const groups = await response.json();
+            renderGroups(groups);
+        } else {
+            console.error('Failed to load groups');
+        }
+    } catch (error) {
+        console.error('Error loading groups:', error);
+    }
+}
 
-  const formData = new FormData();
-  formData.append('file', file);
-
-  if (state.currentChat) {
-    formData.append('chatId', state.currentChat.id);
-    formData.append('chatType', 'private');
-  } else {
-    formData.append('chatId', state.currentGroup.id);
-    formData.append('chatType', 'group');
-  }
-
-  showToast('Envoi du fichier...');
-  try {
-    const response = await fetch(`${config.apiBaseUrl}/api/upload-file`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('nexus_token')}`
-      },
-      body: formData
+// Afficher les groupes
+function renderGroups(groups) {
+    groupsList.innerHTML = '';
+    
+    groups.forEach(group => {
+        const lastMessage = group.lastMessage ? 
+            (group.lastMessage.sender._id === currentUser._id ? 
+             `Vous: ${group.lastMessage.content}` : 
+             `${group.lastMessage.sender.name}: ${group.lastMessage.content}`) : 
+            'Aucun message';
+        
+        const groupItem = document.createElement('li');
+        groupItem.className = `contact-item ${currentChat?._id === group._id ? 'active' : ''}`;
+        groupItem.innerHTML = `
+            <div class="contact-avatar">
+                ${group.avatar ? `<img src="${group.avatar}" alt="${group.name}">` : group.name.charAt(0).toUpperCase()}
+            </div>
+            <div class="contact-info">
+                <h3>${group.name}</h3>
+                <p>${lastMessage}</p>
+            </div>
+            <div class="contact-meta">
+                ${group.lastMessage ? `<span class="time">${formatTime(group.lastMessage.createdAt)}</span>` : ''}
+                ${group.unreadCount > 0 ? `<span class="badge">${group.unreadCount}</span>` : ''}
+            </div>
+        `;
+        
+        groupItem.addEventListener('click', () => openChat(group, true));
+        groupsList.appendChild(groupItem);
     });
-    if (response.ok) {
-      showToast('Fichier envoyé', 'success');
+}
+
+// Ouvrir une discussion
+async function openChat(chat, isGroup) {
+    currentChat = { ...chat, isGroup };
+    
+    // Mettre à jour l'interface
+    chatName.textContent = chat.name;
+    
+    if (chat.avatar) {
+        chatAvatar.innerHTML = `<img src="${chat.avatar}" alt="${chat.name}">`;
     } else {
-      const { error } = await response.json();
-      showToast(error || 'Erreur lors de l\'envoi', 'error');
+        chatAvatar.textContent = chat.name.charAt(0).toUpperCase();
     }
-  } catch (err) {
-    console.error('Upload error:', err);
-    showToast('Erreur lors de l\'envoi du fichier', 'error');
-  }
+    
+    // Charger les messages
+    try {
+        const endpoint = isGroup ? `/api/messages/group/${chat._id}` : `/api/messages/private/${chat._id}`;
+        const response = await fetch(endpoint, {
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('nexus-chat-token')}`
+            }
+        });
+        
+        if (response.ok) {
+            const messages = await response.json();
+            renderMessages(messages);
+            
+            // Marquer les messages comme lus
+            if (messages.length > 0) {
+                const lastMessage = messages[messages.length - 1];
+                if (isGroup) {
+                    socket.emit('read-group-messages', { groupId: chat._id });
+                } else {
+                    socket.emit('read-messages', { senderId: chat._id });
+                }
+            }
+        } else {
+            console.error('Failed to load messages');
+        }
+    } catch (error) {
+        console.error('Error loading messages:', error);
+    }
+    
+    // Mettre à jour la sélection dans la liste
+    updateChatSelection();
 }
 
-/**
- * Connecte le client au serveur Socket.IO
- */
-function connectSocket() {
-  if (state.socket) return;
-
-  // Toujours récupérer le token courant depuis le stockage pour gérer
-  // les connexions établies après un login sans rechargement de la page
-  const token = localStorage.getItem('nexus_token');
-  state.socket = io({
-    ...config.socketOptions,
-    auth: { token }
-  });
-  
-  // Gestion des erreurs de connexion
-  state.socket.on('connect_error', (err) => {
-    console.error('Erreur de connexion Socket.IO:', err);
-    if (err.message === 'Token expiré' || err.message === 'Token invalide') {
-      localStorage.removeItem('nexus_token');
-      window.location.reload();
-    }
-  });
-  
-  // Écoute des événements Socket.IO
-  state.socket.on('new-message', handleNewMessage);
-  state.socket.on('new-group-message', handleNewGroupMessage);
-  state.socket.on('message-edited', handleMessageEdited);
-  state.socket.on('message-deleted', handleMessageDeleted);
-  state.socket.on('reaction-updated', handleReactionUpdated);
-  state.socket.on('typing', handleTyping);
-  state.socket.on('stop-typing', handleStopTyping);
-  state.socket.on('users-updated', handleUsersUpdated);
-  state.socket.on('group-invitation', handleGroupInvitation);
-  state.socket.on('webrtc-offer', handleWebRTCOffer);
-  state.socket.on('webrtc-answer', handleWebRTCAnswer);
-  state.socket.on('webrtc-ice-candidate', handleWebRTCICECandidate);
-  state.socket.on('end-call', handleEndCall);
+// Afficher les messages
+function renderMessages(messages) {
+    messagesList.innerHTML = '';
+    
+    messages.forEach(message => {
+        appendMessage(message);
+    });
+    
+    // Faire défiler vers le bas
+    scrollToBottom();
 }
 
-/**
- * Gère la réception d'un nouveau message
- */
-function handleNewMessage(message) {
-  // Jouer le son de notification
-  playAudio(dom.messageSound);
-  
-  // Si le message est pour la conversation actuelle
-  if (state.currentChat && message.sender === state.currentChat.username) {
-    state.messages.push(message);
-    renderMessages();
+// Ajouter un message à la discussion
+function appendMessage(message) {
+    const isSent = message.sender._id === currentUser._id;
+    const messageElement = document.createElement('div');
+    messageElement.className = `message ${isSent ? 'sent' : 'received'}`;
+    
+    let content = message.content;
+    if (message.deleted) {
+        content = '<em>Message supprimé</em>';
+    }
+    
+    messageElement.innerHTML = `
+        <div class="message-info">
+            <span>${isSent ? 'Vous' : message.sender.name}</span>
+            <span>${formatTime(message.createdAt)}</span>
+        </div>
+        ${message.replyTo ? `
+            <div class="reply-message">
+                ${message.replyTo.sender._id === currentUser._id ? 'Vous' : message.replyTo.sender.name}: 
+                ${message.replyTo.content}
+            </div>
+        ` : ''}
+        <div class="message-content">${content}</div>
+        ${message.edited ? '<span class="edited-label">(modifié)</span>' : ''}
+        <div class="message-actions">
+            <button class="message-action" data-action="reply" data-id="${message._id}">
+                <i class="fas fa-reply"></i>
+            </button>
+            ${isSent ? `
+                <button class="message-action" data-action="edit" data-id="${message._id}">
+                    <i class="fas fa-edit"></i>
+                </button>
+                <button class="message-action" data-action="delete" data-id="${message._id}">
+                    <i class="fas fa-trash"></i>
+                </button>
+            ` : ''}
+            <button class="message-action" data-action="react" data-id="${message._id}">
+                <i class="far fa-smile"></i>
+            </button>
+        </div>
+        ${message.reactions && message.reactions.length > 0 ? `
+            <div class="message-reactions">
+                ${message.reactions.map(reaction => `
+                    <span class="reaction">${reaction.emoji} ${reaction.count > 1 ? reaction.count : ''}</span>
+                `).join('')}
+            </div>
+        ` : ''}
+    `;
+    
+    messagesList.appendChild(messageElement);
+    
+    // Faire défiler vers le bas
     scrollToBottom();
     
-    // Marquer comme lu
-    state.socket.emit('mark-messages-read', { sender: state.currentChat.id });
-  } else {
-    // Mettre à jour le compteur de messages non lus
-    const contact = state.contacts.find(c => c.username === message.sender);
-    if (contact) {
-      contact.unreadCount = (contact.unreadCount || 0) + 1;
-      renderContactsModal();
+    // Ajouter les événements aux actions
+    addMessageActions(messageElement, message);
+}
+
+// Ajouter des événements aux actions des messages
+function addMessageActions(element, message) {
+    const replyBtn = element.querySelector('[data-action="reply"]');
+    const editBtn = element.querySelector('[data-action="edit"]');
+    const deleteBtn = element.querySelector('[data-action="delete"]');
+    const reactBtn = element.querySelector('[data-action="react"]');
+    
+    if (replyBtn) {
+        replyBtn.addEventListener('click', () => replyToMessage(message));
     }
     
-    // Afficher une notification
-    showToast(`Nouveau message de ${message.senderName}`, 'info');
-  }
-}
-
-/**
- * Gère la réception d'un nouveau message de groupe
- */
-function handleNewGroupMessage(message) {
-  playAudio(dom.messageSound);
-  
-  if (state.currentGroup && message.group === state.currentGroup.id) {
-    state.messages.push(message);
-    renderMessages();
-    scrollToBottom();
-    
-    // Marquer comme lu
-    state.socket.emit('mark-group-messages-read', { groupId: state.currentGroup.id });
-  } else {
-    const group = state.groups.find(g => g.id === message.group);
-    if (group) {
-      group.unreadCount = (group.unreadCount || 0) + 1;
-      renderGroups();
+    if (editBtn) {
+        editBtn.addEventListener('click', () => editMessage(message));
     }
     
-    showToast(`Nouveau message dans ${group?.name || 'groupe'}`, 'info');
-  }
-}
-
-/**
- * Gère la modification d'un message
- */
-function handleMessageEdited({ id, content, edited }) {
-  const message = state.messages.find(m => m.id === id);
-  if (message) {
-    message.content = content;
-    message.edited = edited;
-    renderMessages();
-  }
-}
-
-/**
- * Gère la suppression d'un message
- */
-function handleMessageDeleted({ id }) {
-  const message = state.messages.find(m => m.id === id);
-  if (message) {
-    message.deleted = true;
-    renderMessages();
-  }
-}
-
-/**
- * Gère la mise à jour des réactions
- */
-function handleReactionUpdated({ id, reactions }) {
-  const message = state.messages.find(m => m.id === id);
-  if (message) {
-    message.reactions = reactions;
-    renderMessages();
-  }
-}
-
-/**
- * Gère l'indicateur de frappe
- */
-function handleTyping({ sender, group }) {
-  if (
-    (state.currentChat && sender === state.currentChat.username) ||
-    (state.currentGroup && group === state.currentGroup.id)
-  ) {
-    state.typingUsers.add(sender);
-    updateTypingIndicator();
-  }
-}
-
-/**
- * Gère l'arrêt de l'indicateur de frappe
- */
-function handleStopTyping({ sender, group }) {
-  if (
-    (state.currentChat && sender === state.currentChat.username) ||
-    (state.currentGroup && group === state.currentGroup.id)
-  ) {
-    state.typingUsers.delete(sender);
-    updateTypingIndicator();
-  }
-}
-
-/**
- * Met à jour l'indicateur de frappe dans l'interface
- */
-function updateTypingIndicator() {
-  if (state.typingUsers.size > 0) {
-    const users = Array.from(state.typingUsers).join(', ');
-    dom.typingIndicatorContainer.textContent = `${users} est en train d'écrire...`;
-    dom.typingIndicatorContainer.classList.add('visible');
-    dom.typingIndicatorContainer.classList.remove('hidden');
-    dom.chatPartnerStatus.classList.add('hidden');
-  } else {
-    dom.typingIndicatorContainer.textContent = '';
-    dom.typingIndicatorContainer.classList.remove('visible');
-    dom.typingIndicatorContainer.classList.add('hidden');
-    dom.chatPartnerStatus.classList.remove('hidden');
-  }
-}
-
-/**
- * Gère la mise à jour de la liste des utilisateurs en ligne
- */
-function handleUsersUpdated(usernames) {
-  state.contacts.forEach(contact => {
-    contact.online = usernames.includes(contact.username);
-  });
-  
-  if (state.currentChat) {
-    const contact = state.contacts.find(c => c.id === state.currentChat.id);
-    if (contact) {
-      dom.chatPartnerStatus.querySelector('span').textContent = contact.online ? 'En ligne' : 'Hors ligne';
-      dom.chatPartnerStatus.querySelector('.status-dot').className = `status-dot ${contact.online ? 'online' : 'offline'}`;
+    if (deleteBtn) {
+        deleteBtn.addEventListener('click', () => deleteMessage(message._id));
     }
-  }
-  
-  renderContactsModal();
+    
+    if (reactBtn) {
+        reactBtn.addEventListener('click', () => reactToMessage(message._id));
+    }
 }
 
-/**
- * Gère la réception d'une invitation de groupe
- */
-function handleGroupInvitation({ id, name }) {
-  showGroupInvitationToast(id, name);
+// Répondre à un message
+function replyToMessage(message) {
+    replyPreview.style.display = 'block';
+    replyPreview.innerHTML = `
+        <div class="reply-preview-content">
+            En réponse à ${message.sender._id === currentUser._id ? 'vous' : message.sender.name}: 
+            ${message.content}
+        </div>
+        <button class="close-reply">
+            <i class="fas fa-times"></i>
+        </button>
+    `;
+    
+    replyPreview.dataset.replyTo = message._id;
+    
+    replyPreview.querySelector('.close-reply').addEventListener('click', () => {
+        replyPreview.style.display = 'none';
+        delete replyPreview.dataset.replyTo;
+    });
+    
+    messageInput.focus();
 }
 
-/**
- * Fait défiler la conversation vers le bas
- */
+// Modifier un message
+function editMessage(message) {
+    messageInput.value = message.content;
+    messageInput.focus();
+    messageInput.dataset.editId = message._id;
+    
+    // Changer le bouton d'envoi pour "Modifier"
+    sendBtn.innerHTML = '<i class="fas fa-save"></i>';
+    sendBtn.dataset.action = 'edit';
+}
+
+// Supprimer un message
+function deleteMessage(messageId) {
+    if (confirm('Voulez-vous vraiment supprimer ce message ?')) {
+        socket.emit('delete-message', { messageId });
+    }
+}
+
+// Réagir à un message
+function reactToMessage(messageId) {
+    // Dans une vraie application, on pourrait ouvrir un sélecteur d'emojis
+    const emoji = '👍'; // Pour simplifier, on utilise toujours le même emoji
+    socket.emit('react-to-message', { messageId, emoji });
+}
+
+// Envoyer un message
+function sendMessage() {
+    const content = messageInput.value.trim();
+    if (!content || !currentChat) return;
+    
+    const ephemeral = document.getElementById('ephemeral-select').value;
+    const replyTo = replyPreview.dataset.replyTo;
+    
+    const messageData = {
+        content,
+        ephemeral: parseInt(ephemeral),
+        replyTo
+    };
+    
+    if (currentChat.isGroup) {
+        messageData.groupId = currentChat._id;
+        socket.emit('send-group-message', messageData);
+    } else {
+        messageData.receiverId = currentChat._id;
+        socket.emit('send-message', messageData);
+    }
+    
+    // Réinitialiser l'interface
+    messageInput.value = '';
+    messageInput.dataset.editId = '';
+    replyPreview.style.display = 'none';
+    delete replyPreview.dataset.replyTo;
+    
+    // Remettre le bouton d'envoi normal
+    sendBtn.innerHTML = '<i class="fas fa-paper-plane"></i>';
+    delete sendBtn.dataset.action;
+}
+
+// Gérer la saisie (indicateur "en train d'écrire")
+let typingTimeout;
+function handleTyping() {
+    if (!currentChat || !socket) return;
+    
+    // Activer l'indicateur
+    socket.emit('typing', { 
+        to: currentChat._id, 
+        isTyping: true,
+        isGroup: currentChat.isGroup
+    });
+    
+    // Désactiver après un délai
+    clearTimeout(typingTimeout);
+    typingTimeout = setTimeout(() => {
+        socket.emit('typing', { 
+            to: currentChat._id, 
+            isTyping: false,
+            isGroup: currentChat.isGroup
+        });
+    }, 2000);
+}
+
+// Créer un groupe
+async function createGroup() {
+    const name = document.getElementById('group-name').value;
+    const membersInput = document.getElementById('group-members').value;
+    const avatarInput = document.getElementById('group-avatar');
+    
+    if (!name) {
+        showToast('Veuillez entrer un nom pour le groupe');
+        return;
+    }
+    
+    const members = membersInput.split(',').map(m => m.trim()).filter(m => m);
+    
+    const formData = new FormData();
+    formData.append('name', name);
+    formData.append('members', JSON.stringify(members));
+    
+    if (avatarInput.files[0]) {
+        formData.append('avatar', avatarInput.files[0]);
+    }
+    
+    try {
+        const response = await fetch('/api/groups', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('nexus-chat-token')}`
+            },
+            body: formData
+        });
+        
+        if (response.ok) {
+            const group = await response.json();
+            loadGroups();
+            groupModal.style.display = 'none';
+            showToast('Groupe créé avec succès');
+            
+            // Réinitialiser le formulaire
+            document.getElementById('group-name').value = '';
+            document.getElementById('group-members').value = '';
+            document.getElementById('group-avatar').value = '';
+            document.getElementById('group-avatar-preview').innerHTML = '';
+        } else {
+            const error = await response.json();
+            showToast(error.message || 'Erreur lors de la création du groupe');
+        }
+    } catch (error) {
+        console.error('Error creating group:', error);
+        showToast('Erreur lors de la création du groupe');
+    }
+}
+
+// Mettre à jour le statut d'un utilisateur
+function updateUserStatus(userId, isOnline) {
+    const contactItems = document.querySelectorAll('.contact-item');
+    
+    contactItems.forEach(item => {
+        const avatar = item.querySelector('.contact-avatar');
+        if (avatar && avatar.dataset.userId === userId) {
+            const onlineDot = avatar.querySelector('.online-dot');
+            
+            if (isOnline) {
+                if (!onlineDot) {
+                    const dot = document.createElement('span');
+                    dot.className = 'online-dot';
+                    avatar.appendChild(dot);
+                }
+            } else if (onlineDot) {
+                avatar.removeChild(onlineDot);
+            }
+        }
+    });
+}
+
+// Afficher une notification de nouveau message
+function showNewMessageNotification(message) {
+    const senderName = message.sender._id === currentUser._id ? 'Vous' : message.sender.name;
+    const chatName = message.group ? message.group.name : senderName;
+    
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.innerHTML = `
+        <div class="toast-avatar">
+            ${message.sender.avatar ? 
+              `<img src="${message.sender.avatar}" alt="${senderName}">` : 
+              senderName.charAt(0).toUpperCase()}
+        </div>
+        <div class="toast-content">
+            <h4>${chatName}</h4>
+            <p>${message.content}</p>
+        </div>
+        <button class="close-toast">
+            <i class="fas fa-times"></i>
+        </button>
+    `;
+    
+    toastContainer.appendChild(toast);
+    
+    // Fermer la notification après 5 secondes
+    setTimeout(() => {
+        toast.remove();
+    }, 5000);
+    
+    // Fermer la notification au clic
+    toast.querySelector('.close-toast').addEventListener('click', () => {
+        toast.remove();
+    });
+    
+    // Ouvrir la discussion au clic
+    toast.addEventListener('click', () => {
+        if (message.group) {
+            openChat(message.group, true);
+        } else {
+            openChat(message.sender._id === currentUser._id ? message.receiver : message.sender, false);
+        }
+        toast.remove();
+    });
+}
+
+// Afficher une notification toast
+function showToast(message) {
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.textContent = message;
+    
+    toastContainer.appendChild(toast);
+    
+    setTimeout(() => {
+        toast.remove();
+    }, 3000);
+}
+
+// Formater l'heure
+function formatTime(timestamp) {
+    const date = new Date(timestamp);
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+// Faire défiler vers le bas de la discussion
 function scrollToBottom() {
-  setTimeout(() => {
-    dom.messagesContainer.scrollTop = dom.messagesContainer.scrollHeight;
-  }, 100);
+    messagesList.scrollTop = messagesList.scrollHeight;
 }
 
-/**
- * Affiche une notification toast
- */
-function showToast(message, type = 'info') {
-  const toast = document.createElement('div');
-  toast.className = `toast ${type}`;
-  toast.innerHTML = `
-    <div class="toast-body">${message}</div>
-    <button class="toast-close">&times;</button>
-  `;
-  
-  toast.querySelector('.toast-close').addEventListener('click', () => {
-    toast.classList.add('slide-out');
-    setTimeout(() => toast.remove(), 300);
-  });
-  
-  dom.toastContainer.appendChild(toast);
-  
-  setTimeout(() => {
-    toast.classList.add('slide-out');
-    setTimeout(() => toast.remove(), 300);
-  }, config.toastDuration);
-}
-
-/**
- * Affiche une notification d'appel entrant
- */
-function showIncomingCall(caller, callerName, callerAvatar, isVideo) {
-  const toast = document.createElement('div');
-  toast.className = 'toast incoming-call';
-  toast.innerHTML = `
-    <div class="toast-header">
-      <div class="toast-title">
-        <i class="fas fa-phone"></i>
-        Appel ${isVideo ? 'vidéo' : 'audio'} entrant
-      </div>
-    </div>
-    <div class="toast-body">
-      <div class="caller-info">
-        <img src="${callerAvatar}" alt="${callerName}" class="caller-avatar">
-        <div class="caller-name">${callerName}</div>
-      </div>
-    </div>
-    <div class="toast-actions">
-      <button class="toast-btn accept">Accepter</button>
-      <button class="toast-btn decline">Refuser</button>
-    </div>
-  `;
-  
-  toast.querySelector('.accept').addEventListener('click', () => {
-    acceptCall(caller, isVideo);
-    toast.remove();
-  });
-  
-  toast.querySelector('.decline').addEventListener('click', () => {
-    state.socket.emit('end-call', { recipient: caller });
-    toast.remove();
-  });
-  
-  dom.toastContainer.appendChild(toast);
-  
-  // Jouer la sonnerie
-  playAudio(dom.callSound);
-  
-  return toast;
-}
-
-/**
- * Affiche une invitation de groupe avec actions
- */
-function showGroupInvitationToast(groupId, groupName) {
-  const toast = document.createElement('div');
-  toast.className = 'toast group-invite';
-  toast.innerHTML = `
-    <div class="toast-body">Vous avez été invité à rejoindre le groupe <strong>${groupName}</strong></div>
-    <div class="toast-actions">
-      <button class="toast-btn accept">Accepter</button>
-      <button class="toast-btn decline">Refuser</button>
-    </div>
-  `;
-
-  toast.querySelector('.accept').addEventListener('click', async () => {
-    await fetch(`${config.apiBaseUrl}/api/groups/${groupId}/invitations/accept`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${localStorage.getItem('nexus_token')}` }
+// Mettre à jour la sélection dans la liste des contacts/groupes
+function updateChatSelection() {
+    const contactItems = document.querySelectorAll('.contact-item');
+    contactItems.forEach(item => {
+        item.classList.remove('active');
+        
+        if (currentChat && item.dataset.chatId === currentChat._id) {
+            item.classList.add('active');
+        }
     });
-    toast.remove();
-    loadGroups();
-  });
-
-  toast.querySelector('.decline').addEventListener('click', async () => {
-    await fetch(`${config.apiBaseUrl}/api/groups/${groupId}/invitations/decline`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${localStorage.getItem('nexus_token')}` }
-    });
-    toast.remove();
-    loadGroups();
-  });
-
-  dom.toastContainer.appendChild(toast);
-  return toast;
 }
 
-/**
- * Récupère la configuration WebRTC
- */
-async function fetchWebRTCConfig() {
-  try {
-    const response = await fetch(`${config.apiBaseUrl}/api/webrtc-config`);
-    if (response.ok) {
-      const { iceServers } = await response.json();
-      state.iceServers = iceServers;
-    }
-  } catch (err) {
-    console.error('Erreur de récupération de la config WebRTC:', err);
-  }
-}
-
-/**
- * Démarre un appel (audio ou vidéo)
- */
+// Démarrer un appel
 async function startCall(isVideo) {
-  if (!state.currentChat) return;
-  
-  try {
-    state.isCaller = true;
-    state.callData = {
-      recipient: state.currentChat.username,
-      isVideo
+    if (!currentChat || currentChat.isGroup) {
+        showToast('Les appels de groupe ne sont pas encore supportés');
+        return;
+    }
+    
+    try {
+        // Demander l'accès au média
+        localStream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+            video: isVideo
+        });
+        
+        // Configurer la connexion WebRTC
+        peerConnection = new RTCPeerConnection({
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' }
+            ]
+        });
+        
+        // Ajouter le flux local
+        localStream.getTracks().forEach(track => {
+            peerConnection.addTrack(track, localStream);
+        });
+        
+        // Configurer les événements ICE
+        peerConnection.onicecandidate = ({ candidate }) => {
+            if (candidate) {
+                socket.emit('ice-candidate', {
+                    to: currentChat._id,
+                    candidate
+                });
+            }
+        };
+        
+        peerConnection.oniceconnectionstatechange = () => {
+            if (peerConnection.iceConnectionState === 'disconnected' ||
+                peerConnection.iceConnectionState === 'failed') {
+                endCall();
+            }
+        };
+        
+        // Créer une offre
+        const offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
+        
+        // Envoyer l'offre
+        callData = {
+            from: currentUser._id,
+            to: currentChat._id,
+            offer,
+            isVideo
+        };
+        
+        socket.emit('call-request', callData);
+        
+        // Afficher l'interface d'appel
+        showCallInterface(isVideo);
+        
+    } catch (error) {
+        console.error('Error starting call:', error);
+        showToast('Erreur lors du démarrage de l\'appel');
+        endCall();
+    }
+}
+
+// Afficher l'interface d'appel
+function showCallInterface(isVideo) {
+    callModal.style.display = 'flex';
+    document.getElementById('call-title').textContent = `Appel avec ${currentChat.name}`;
+    document.getElementById('call-type').textContent = isVideo ? 'Appel vidéo' : 'Appel audio';
+    
+    // Afficher le flux local
+    if (localStream) {
+        localVideo.srcObject = localStream;
+        
+        if (!isVideo) {
+            localVideo.style.display = 'none';
+        }
+    }
+    
+    // Démarrer le chronomètre
+    let seconds = 0;
+    callInterval = setInterval(() => {
+        seconds++;
+        const minutes = Math.floor(seconds / 60);
+        const remainingSeconds = seconds % 60;
+        document.getElementById('call-duration').textContent = 
+            `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+    }, 1000);
+}
+
+// Afficher l'interface d'appel entrant
+function showIncomingCall(from, name, avatar, isVideo) {
+    // Si déjà en appel, refuser automatiquement
+    if (peerConnection) {
+        socket.emit('call-response', { 
+            to: from, 
+            accepted: false 
+        });
+        return;
+    }
+    
+    callData = {
+        from,
+        isVideo
     };
     
-    // Démarrer la preview locale
-    state.localStream = await navigator.mediaDevices.getUserMedia({
-      audio: true,
-      video: isVideo
-    });
+    incomingCallModal.style.display = 'flex';
+    document.getElementById('caller-name').textContent = name;
+    document.getElementById('call-type').textContent = isVideo ? 'Appel vidéo entrant' : 'Appel audio entrant';
     
-    dom.previewVideo.srcObject = state.localStream;
-    dom.callPreviewContainer.style.display = 'flex';
-    dom.callPartnerName.textContent = `Appel à ${state.currentChat.name}`;
-    dom.callStatus.textContent = 'Appel en cours...';
-    
-    // Initialiser la connexion WebRTC
-    initPeerConnection();
-    
-    // Envoyer l'offre au destinataire
-    const offer = await state.peerConnection.createOffer();
-    await state.peerConnection.setLocalDescription(offer);
-    
-    state.socket.emit('webrtc-offer', {
-      recipient: state.currentChat.username,
-      offer,
-      isVideo
-    });
-    
-  } catch (err) {
-    console.error('Erreur de démarrage de l\'appel:', err);
-    showToast('Erreur de démarrage de l\'appel', 'error');
-    endCall();
-  }
-}
-
-/**
- * Accepte un appel entrant
- */
-async function acceptCall(caller, isVideo) {
-  try {
-    state.isCaller = false;
-    state.callData = {
-      caller,
-      isVideo
-    };
-    
-    // Démarrer la preview locale
-    state.localStream = await navigator.mediaDevices.getUserMedia({
-      audio: true,
-      video: isVideo
-    });
-    
-    dom.previewVideo.srcObject = state.localStream;
-    dom.callPreviewContainer.style.display = 'flex';
-    dom.callPartnerName.textContent = `Appel avec ${caller}`;
-    dom.callStatus.textContent = 'Appel en cours...';
-    
-    // Initialiser la connexion WebRTC
-    initPeerConnection();
-    await state.peerConnection.setRemoteDescription(new RTCSessionDescription(state.pendingOffer.offer));
-
-    const answer = await state.peerConnection.createAnswer();
-    await state.peerConnection.setLocalDescription(answer);
-    
-    state.socket.emit('webrtc-answer', {
-      recipient: caller,
-      answer
-    });
-
-    state.pendingOffer = null;
-    
-    // Arrêter la sonnerie
-    dom.callSound.pause();
-    dom.callSound.currentTime = 0;
-    
-  } catch (err) {
-    console.error('Erreur d\'acceptation de l\'appel:', err);
-    showToast('Erreur d\'acceptation de l\'appel', 'error');
-    endCall();
-  }
-}
-
-/**
- * Initialise la connexion WebRTC
- */
-function initPeerConnection() {
-  state.peerConnection = new RTCPeerConnection({
-    iceServers: state.iceServers
-  });
-  
-  // Gérer les flux média
-  state.localStream.getTracks().forEach(track => {
-    state.peerConnection.addTrack(track, state.localStream);
-  });
-  
-  state.peerConnection.ontrack = (event) => {
-    if (!state.remoteStream) {
-      state.remoteStream = new MediaStream();
-      dom.remoteVideo.srcObject = state.remoteStream;
+    if (avatar) {
+        document.getElementById('caller-avatar').innerHTML = `<img src="${avatar}" alt="${name}">`;
+    } else {
+        document.getElementById('caller-avatar').textContent = name.charAt(0).toUpperCase();
     }
-    event.streams[0].getTracks().forEach(track => {
-      state.remoteStream.addTrack(track);
+}
+
+// Accepter un appel
+async function acceptCall() {
+    if (!callData) return;
+    
+    incomingCallModal.style.display = 'none';
+    
+    try {
+        // Demander l'accès au média
+        localStream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+            video: callData.isVideo
+        });
+        
+        // Configurer la connexion WebRTC
+        peerConnection = new RTCPeerConnection({
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' }
+            ]
+        });
+        
+        // Ajouter le flux local
+        localStream.getTracks().forEach(track => {
+            peerConnection.addTrack(track, localStream);
+        });
+        
+        // Configurer les événements ICE
+        peerConnection.onicecandidate = ({ candidate }) => {
+            if (candidate) {
+                socket.emit('ice-candidate', {
+                    to: callData.from,
+                    candidate
+                });
+            }
+        };
+        
+        peerConnection.oniceconnectionstatechange = () => {
+            if (peerConnection.iceConnectionState === 'disconnected' ||
+                peerConnection.iceConnectionState === 'failed') {
+                endCall();
+            }
+        };
+        
+        // Lorsqu'un flux distant est reçu
+        peerConnection.ontrack = ({ streams }) => {
+            remoteVideo.srcObject = streams[0];
+        };
+        
+        // Définir l'offre distante
+        await peerConnection.setRemoteDescription(callData.offer);
+        
+        // Créer une réponse
+        const answer = await peerConnection.createAnswer();
+        await peerConnection.setLocalDescription(answer);
+        
+        // Envoyer la réponse
+        socket.emit('call-response', {
+            to: callData.from,
+            accepted: true,
+            answer
+        });
+        
+        // Afficher l'interface d'appel
+        showCallInterface(callData.isVideo);
+        
+    } catch (error) {
+        console.error('Error accepting call:', error);
+        showToast('Erreur lors de l\'acceptation de l\'appel');
+        endCall();
+    }
+}
+
+// Refuser un appel
+function declineCall() {
+    if (!callData) return;
+    
+    socket.emit('call-response', { 
+        to: callData.from, 
+        accepted: false 
     });
-  };
-  
-  state.peerConnection.onicecandidate = (event) => {
-    if (event.candidate) {
-      state.socket.emit('webrtc-ice-candidate', {
-        recipient: state.isCaller ? state.callData.recipient : state.callData.caller,
-        candidate: event.candidate
-      });
-    }
-  };
-  
-  state.peerConnection.onconnectionstatechange = () => {
-    const stateStr = state.peerConnection.connectionState;
-    if (stateStr === 'connected') {
-      startCallComplete();
-    } else if (stateStr === 'disconnected' || stateStr === 'failed' || stateStr === 'closed') {
-      endCall();
-    }
-  };
+    
+    incomingCallModal.style.display = 'none';
+    callData = null;
 }
 
-/**
- * Gère une offre WebRTC entrante
- */
-async function handleWebRTCOffer({ caller, callerName, callerAvatar, offer, isVideo }) {
-  // Si déjà en appel, refuser automatiquement
-  if (state.peerConnection) {
-    state.socket.emit('end-call', { recipient: caller });
-    return;
-  }
-  
-  const toast = showIncomingCall(caller, callerName, callerAvatar, isVideo);
-  
-  // Timeout pour l'appel entrant (30s)
-  setTimeout(() => {
-    if (!state.peerConnection && toast.parentNode) {
-      toast.remove();
-      state.socket.emit('end-call', { recipient: caller });
-      dom.callSound.pause();
-      dom.callSound.currentTime = 0;
-    }
-  }, 30000);
-  
-  // Sauvegarder l'offre pour plus tard
-  state.pendingOffer = { offer, caller, isVideo };
-}
-
-/**
- * Gère une réponse WebRTC entrante
- */
-async function handleWebRTCAnswer({ answer }) {
-  if (!state.peerConnection) return;
-  
-  try {
-    await state.peerConnection.setRemoteDescription(answer);
-  } catch (err) {
-    console.error('Erreur de traitement de la réponse:', err);
-    endCall();
-  }
-}
-
-/**
- * Gère un candidat ICE entrant
- */
-async function handleWebRTCICECandidate({ candidate }) {
-  if (!state.peerConnection) return;
-  
-  try {
-    await state.peerConnection.addIceCandidate(candidate);
-  } catch (err) {
-    console.error('Erreur d\'ajout du candidat ICE:', err);
-  }
-}
-
-/**
- * Passe de la preview à l'appel complet
- */
-function startCallComplete() {
-  if (!state.peerConnection) return;
-  
-  dom.callPreviewContainer.style.display = 'none';
-  dom.callContainer.style.display = 'flex';
-  
-  // Mettre à jour l'interface
-  const partner = state.isCaller ? state.currentChat : state.contacts.find(c => c.username === state.callData.caller);
-  dom.callPartnerName.textContent = partner.name;
-  dom.callStatus.textContent = state.callData.isVideo ? 'Appel vidéo en cours' : 'Appel audio en cours';
-  
-  // Activer/désactiver les boutons selon le type d'appel
-  dom.videoBtn.style.display = state.callData.isVideo ? 'flex' : 'none';
-}
-
-/**
- * Termine l'appel en cours
- */
+// Terminer un appel
 function endCall() {
-  // Arrêter les flux média
-  if (state.localStream) {
-    state.localStream.getTracks().forEach(track => track.stop());
-    state.localStream = null;
-  }
-  
-  if (state.remoteStream) {
-    state.remoteStream.getTracks().forEach(track => track.stop());
-    state.remoteStream = null;
-  }
-  
-  // Fermer la connexion WebRTC
-  if (state.peerConnection) {
-    state.peerConnection.close();
-    state.peerConnection = null;
-  }
-  
-  // Réinitialiser les éléments vidéo
-  dom.previewVideo.srcObject = null;
-  dom.localVideo.srcObject = null;
-  dom.remoteVideo.srcObject = null;
-  
-  // Cacher les interfaces d'appel
-  dom.callPreviewContainer.style.display = 'none';
-  dom.callContainer.style.display = 'none';
-  
-  // Arrêter la sonnerie
-  dom.callSound.pause();
-  dom.callSound.currentTime = 0;
-  
-  // Informer l'autre partie si nous étions l'appelant
-  if (state.isCaller && state.callData) {
-    state.socket.emit('end-call', { recipient: state.callData.recipient });
-  }
-  
-  state.callData = null;
-  state.isCaller = false;
+    if (peerConnection) {
+        peerConnection.close();
+        peerConnection = null;
+    }
+    
+    if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+        localStream = null;
+    }
+    
+    if (callInterval) {
+        clearInterval(callInterval);
+        callInterval = null;
+    }
+    
+    callModal.style.display = 'none';
+    incomingCallModal.style.display = 'none';
+    
+    // Notifier l'autre utilisateur
+    if (callData) {
+        socket.emit('end-call', { to: callData.from || callData.to });
+        callData = null;
+    }
+    
+    // Réinitialiser les éléments vidéo
+    remoteVideo.srcObject = null;
+    localVideo.srcObject = null;
+    localVideo.style.display = 'block';
 }
 
-/**
- * Gère la fin d'appel par l'autre partie
- */
-function handleEndCall() {
-  showToast('L\'appel a été terminé', 'info');
-  endCall();
-}
-
-/**
- * Active/désactive le micro
- */
+// Activer/désactiver le micro
 function toggleMute() {
-  if (!state.localStream) return;
-  
-  state.isMuted = !state.isMuted;
-  state.localStream.getAudioTracks().forEach(track => {
-    track.enabled = !state.isMuted;
-  });
-  
-  dom.muteBtn.classList.toggle('active', state.isMuted);
+    if (!localStream) return;
+    
+    const audioTrack = localStream.getAudioTracks()[0];
+    if (audioTrack) {
+        audioTrack.enabled = !audioTrack.enabled;
+        muteBtn.classList.toggle('active', !audioTrack.enabled);
+    }
 }
 
-/**
- * Active/désactive la vidéo
- */
+// Activer/désactiver la vidéo
 function toggleVideo() {
-  if (!state.localStream || !state.callData.isVideo) return;
-  
-  state.isVideoOff = !state.isVideoOff;
-  state.localStream.getVideoTracks().forEach(track => {
-    track.enabled = !state.isVideoOff;
-  });
-  
-  dom.videoBtn.classList.toggle('active', state.isVideoOff);
+    if (!localStream) return;
+    
+    const videoTrack = localStream.getVideoTracks()[0];
+    if (videoTrack) {
+        videoTrack.enabled = !videoTrack.enabled;
+        videoBtn.classList.toggle('active', !videoTrack.enabled);
+        localVideo.style.display = videoTrack.enabled ? 'block' : 'none';
+    }
 }
-
-/**
- * Échappe les caractères HTML pour éviter les injections
- */
-function escapeHtml(unsafe) {
-  return unsafe
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
-
-/**
- * Formate une date pour l'affichage
- */
-function formatDate(dateString) {
-  const date = new Date(dateString);
-  const today = new Date();
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-  
-  if (date.toDateString() === today.toDateString()) {
-    return 'Aujourd\'hui';
-  } else if (date.toDateString() === yesterday.toDateString()) {
-    return 'Hier';
-  } else {
-    return date.toLocaleDateString('fr-FR', { 
-      weekday: 'long', 
-      day: 'numeric', 
-      month: 'long' 
-    });
-  }
-}
-
-/**
- * Formate une heure pour l'affichage
- */
-function formatTime(dateString) {
-  const date = new Date(dateString);
-  return date.toLocaleTimeString('fr-FR', { 
-    hour: '2-digit', 
-    minute: '2-digit' 
-  });
-}
-
-// Démarrer l'application
-document.addEventListener('DOMContentLoaded', init);
