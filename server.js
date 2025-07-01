@@ -508,6 +508,39 @@ io.on('connection', async (socket) => {
             console.error('Error marking group messages as read:', error);
         }
     });
+
+    socket.on('edit-message', async ({ messageId, newContent }) => {
+        try {
+            const message = await Message.findById(messageId);
+            if (!message || message.sender.toString() !== socket.userId) {
+                return;
+            }
+
+            message.content = newContent;
+            message.edited = true;
+            await message.save();
+
+            const populatedMessage = await Message.populate(message, [
+                { path: 'sender', select: 'name avatar' },
+                { path: 'receiver', select: 'name avatar' },
+                { path: 'group', select: 'name avatar' }
+            ]);
+
+            if (message.group) {
+                const group = await Group.findById(message.group);
+                group.members.forEach(memberId => {
+                    const memberSocketId = onlineUsers.get(memberId.toString());
+                    if (memberSocketId) io.to(memberSocketId).emit('message-updated', populatedMessage);
+                });
+            } else {
+                const receiverSocketId = onlineUsers.get(message.receiver.toString());
+                if (receiverSocketId) io.to(receiverSocketId).emit('message-updated', populatedMessage);
+                socket.emit('message-updated', populatedMessage);
+            }
+        } catch (error) {
+            console.error('Error editing message:', error);
+        }
+    });
     
     socket.on('delete-message', async ({ messageId }) => {
         try {

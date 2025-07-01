@@ -44,6 +44,7 @@ const localVideo = document.getElementById('local-video');
 const audioCallBtn = document.getElementById('audio-call-btn');
 const videoCallBtn = document.getElementById('video-call-btn');
 const toastContainer = document.getElementById('toast-container');
+const searchInput = document.querySelector('.sidebar-search input');
 
 // Événements
 document.addEventListener('DOMContentLoaded', initApp);
@@ -53,6 +54,13 @@ loginBtn.addEventListener('click', handleLogin);
 signupBtn.addEventListener('click', handleSignup);
 logoutBtn.addEventListener('click', handleLogout);
 messageInput.addEventListener('input', handleTyping);
+messageInput.addEventListener('input', () => {
+    if (messageInput.value.trim() !== '') {
+        sendBtn.disabled = false;
+    } else {
+        sendBtn.disabled = true;
+    }
+});
 messageInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
@@ -70,6 +78,17 @@ declineCallBtn.addEventListener('click', declineCall);
 endCallBtn.addEventListener('click', endCall);
 muteBtn.addEventListener('click', toggleMute);
 videoBtn.addEventListener('click', toggleVideo);
+searchInput.addEventListener('input', (e) => {
+    const searchTerm = e.target.value.toLowerCase();
+    document.querySelectorAll('.contact-list .contact-item').forEach(item => {
+        const name = item.querySelector('.contact-info h3').textContent.toLowerCase();
+        if (name.includes(searchTerm)) {
+            item.style.display = 'flex';
+        } else {
+            item.style.display = 'none';
+        }
+    });
+});
 
 // Initialisation de l'application
 function initApp() {
@@ -281,6 +300,8 @@ function setupApp(user) {
     // Charger les contacts et les groupes
     loadContacts();
     loadGroups();
+
+    showWelcomeScreen();
 }
 
 // Connecter le socket
@@ -305,8 +326,8 @@ function connectSocket(token) {
     });
     
     socket.on('new-message', (message) => {
-        if (currentChat && 
-            ((message.sender._id === currentChat._id && message.receiver === currentUser._id) || 
+        if (currentChat &&
+            ((message.sender._id === currentChat._id && message.receiver === currentUser._id) ||
              (message.receiver._id === currentChat._id && message.sender._id === currentUser._id) ||
              (message.group && message.group._id === currentChat._id))) {
             // Ajouter le message à la discussion actuelle
@@ -315,12 +336,27 @@ function connectSocket(token) {
             // Afficher une notification
             showNewMessageNotification(message);
         }
-        
+
         // Mettre à jour la liste des contacts/groups
         if (message.group) {
             loadGroups();
         } else {
             loadContacts();
+        }
+    });
+
+    socket.on('message-updated', (updatedMessage) => {
+        const messageElement = document.querySelector(`[data-message-id='${updatedMessage._id}']`);
+        if (messageElement) {
+            const contentDiv = messageElement.querySelector('.message-content');
+            const editedLabel = messageElement.querySelector('.edited-label');
+            contentDiv.textContent = updatedMessage.content;
+            if (!editedLabel) {
+                const newEditedLabel = document.createElement('span');
+                newEditedLabel.className = 'edited-label';
+                newEditedLabel.textContent = '(modifié)';
+                contentDiv.insertAdjacentElement('afterend', newEditedLabel);
+            }
         }
     });
     
@@ -384,7 +420,12 @@ async function loadContacts() {
 // Afficher les contacts
 function renderContacts(contacts) {
     contactsList.innerHTML = '';
-    
+
+    if (contacts.length === 0) {
+        contactsList.innerHTML = `<li class="empty-state">Aucun contact trouvé.</li>`;
+        return;
+    }
+
     contacts.forEach(contact => {
         const lastMessage = contact.lastMessage ? 
             (contact.lastMessage.sender._id === currentUser._id ? 
@@ -437,7 +478,12 @@ async function loadGroups() {
 // Afficher les groupes
 function renderGroups(groups) {
     groupsList.innerHTML = '';
-    
+
+    if (groups.length === 0) {
+        groupsList.innerHTML = `<li class="empty-state">Vous n'êtes dans aucun groupe.</li>`;
+        return;
+    }
+
     groups.forEach(group => {
         const lastMessage = group.lastMessage ? 
             (group.lastMessage.sender._id === currentUser._id ? 
@@ -468,6 +514,8 @@ function renderGroups(groups) {
 
 // Ouvrir une discussion
 async function openChat(chat, isGroup) {
+    document.getElementById('welcome-screen').style.display = 'none';
+    document.getElementById('chat-container').style.display = 'flex';
     currentChat = { ...chat, isGroup };
     
     // Mettre à jour l'interface
@@ -584,6 +632,7 @@ function appendMessage(message) {
 
 // Ajouter des événements aux actions des messages
 function addMessageActions(element, message) {
+    element.dataset.messageId = message._id;
     const replyBtn = element.querySelector('[data-action="reply"]');
     const editBtn = element.querySelector('[data-action="edit"]');
     const deleteBtn = element.querySelector('[data-action="delete"]');
@@ -649,8 +698,8 @@ function deleteMessage(messageId) {
 
 // Réagir à un message
 function reactToMessage(messageId) {
-    // Dans une vraie application, on pourrait ouvrir un sélecteur d'emojis
-    const emoji = '👍'; // Pour simplifier, on utilise toujours le même emoji
+    const emoji = prompt("Quel emoji voulez-vous utiliser pour réagir ?");
+    if (!emoji) return;
     socket.emit('react-to-message', { messageId, emoji });
 }
 
@@ -658,6 +707,21 @@ function reactToMessage(messageId) {
 function sendMessage() {
     const content = messageInput.value.trim();
     if (!content || !currentChat) return;
+
+    const editId = messageInput.dataset.editId;
+    if (editId) {
+        socket.emit('edit-message', { messageId: editId, newContent: content });
+
+        // Réinitialiser l'interface après édition
+        messageInput.value = '';
+        replyPreview.style.display = 'none';
+        delete replyPreview.dataset.replyTo;
+        sendBtn.innerHTML = '<i class="fas fa-paper-plane"></i>';
+        delete messageInput.dataset.editId;
+        delete sendBtn.dataset.action;
+        sendBtn.disabled = true;
+        return;
+    }
     
     const ephemeral = document.getElementById('ephemeral-select').value;
     const replyTo = replyPreview.dataset.replyTo;
@@ -675,16 +739,17 @@ function sendMessage() {
         messageData.receiverId = currentChat._id;
         socket.emit('send-message', messageData);
     }
-    
+
     // Réinitialiser l'interface
     messageInput.value = '';
-    messageInput.dataset.editId = '';
     replyPreview.style.display = 'none';
     delete replyPreview.dataset.replyTo;
-    
+
     // Remettre le bouton d'envoi normal
     sendBtn.innerHTML = '<i class="fas fa-paper-plane"></i>';
+    delete messageInput.dataset.editId;
     delete sendBtn.dataset.action;
+    sendBtn.disabled = true;
 }
 
 // Gérer la saisie (indicateur "en train d'écrire")
@@ -862,6 +927,11 @@ function updateChatSelection() {
             item.classList.add('active');
         }
     });
+}
+
+function showWelcomeScreen() {
+    document.getElementById('welcome-screen').style.display = 'flex';
+    document.getElementById('chat-container').style.display = 'none';
 }
 
 // Démarrer un appel

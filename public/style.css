@@ -812,3 +812,10 @@ body {
         display: block;
     }
 }
+
+.empty-state {
+    padding: 1rem;
+    text-align: center;
+    color: #999;
+    font-style: italic;
+}
