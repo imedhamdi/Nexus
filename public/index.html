@@ -84,6 +84,11 @@
                     </div>
                 </div>
             </div>
+
+            <div class="sidebar-search-container">
+                <i class="fas fa-search"></i>
+                <input type="search" id="sidebar-search" placeholder="Rechercher...">
+            </div>
             
             <!-- Navigation -->
             <nav class="sidebar-nav" aria-label="Navigation secondaire">
@@ -103,14 +108,20 @@
                     <i class="fas fa-users" aria-hidden="true"></i>
                     <span>Nouveau groupe</span>
                 </button>
+                <a href="#" id="logout-btn" class="nav-item">
+                    <i class="fas fa-sign-out-alt" aria-hidden="true"></i>
+                    <span>Déconnexion</span>
+                </a>
             </nav>
             
             <!-- Groups and Contacts -->
-            <h3 class="list-title">Discussions</h3>
-            <div class="contacts-list" id="contacts-list" role="list">
+            <div class="sidebar-lists">
+                <h3 class="list-title">Discussions</h3>
+                <div class="contacts-list" id="private-chats-list" role="list"></div>
+
+                <h3 class="list-title">Groupes</h3>
+                <div class="contacts-list" id="groups-list" role="list"></div>
             </div>
-            <h3 class="list-title">Groupes</h3>
-            <div class="contacts-list" id="groups-list" role="list"></div>
         </aside>
         
         <!-- Sidebar Overlay (Mobile) -->
@@ -151,42 +162,18 @@
                     </button>
                 </div>
             </header>
+
+            <div id="welcome-screen" class="welcome-screen">
+                <i class="fas fa-comments welcome-icon"></i>
+                <h2>Bienvenue sur Nexus Chat</h2>
+                <p>Sélectionnez une discussion pour commencer à discuter.</p>
+            </div>
+
+            <div id="loading-spinner" class="loading-spinner hidden"></div>
             
             <!-- Messages Container -->
             <section id="messages-container" class="messages-container" aria-live="polite">
                 <!-- Messages will be dynamically added here -->
-                <div class="date-separator">Aujourd'hui</div>
-                
-                <div class="message received" role="listitem">
-                    <div class="message-wrapper">
-                        <div class="message-content">
-                            Salut, comment ça va ?
-                        </div>
-                        <div class="message-info">
-                            <span class="timestamp">12:30</span>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="message sent" role="listitem">
-                    <div class="message-wrapper">
-                        <div class="message-content">
-                            Ça va bien merci ! Et toi ?
-                            <div class="message-actions">
-                                <button class="message-action-btn" aria-label="Répondre">
-                                    <i class="fas fa-reply"></i>
-                                </button>
-                                <button class="message-action-btn" aria-label="Réaction">
-                                    <i class="fas fa-smile"></i>
-                                </button>
-                            </div>
-                        </div>
-                        <div class="message-info">
-                            <span class="timestamp">12:32</span>
-                            <i class="fas fa-check read-receipt read"></i>
-                        </div>
-                    </div>
-                </div>
             </section>
             
             <!-- Chat Input Area -->

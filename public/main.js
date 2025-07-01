@@ -33,8 +33,12 @@ const dom = {
   avatarPreview: document.getElementById('avatar-preview'),
   messageInput: document.getElementById('message-input'),
   messagesContainer: document.getElementById('messages-container'),
-  contactsList: document.getElementById('contacts-list'),
+  privateChatsList: document.getElementById('private-chats-list'),
   groupsList: document.getElementById('groups-list'),
+  welcomeScreen: document.getElementById('welcome-screen'),
+  loadingSpinner: document.getElementById('loading-spinner'),
+  logoutBtn: document.getElementById('logout-btn'),
+  sidebarSearch: document.getElementById('sidebar-search'),
   userAvatar: document.getElementById('user-avatar'),
   userName: document.getElementById('user-name'),
   userUsername: document.getElementById('user-username'),
@@ -125,6 +129,14 @@ const state = {
   isVideoOff: false,
   iceServers: []
 };
+
+function logout() {
+  localStorage.removeItem('nexus_token');
+  if (state.socket) {
+    state.socket.disconnect();
+  }
+  window.location.reload();
+}
 
 /**
  * Initialisation de l'application
@@ -325,6 +337,29 @@ function setupAppListeners() {
     e.preventDefault();
     showToast('Fonctionnalité à venir');
   });
+
+  dom.logoutBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    logout();
+  });
+
+  dom.sidebarSearch.addEventListener('input', (e) => {
+    const searchTerm = e.target.value.toLowerCase();
+
+    const filterList = (listSelector) => {
+      document.querySelectorAll(listSelector).forEach(item => {
+        const name = item.querySelector('.contact-name').textContent.toLowerCase();
+        if (name.includes(searchTerm)) {
+          item.style.display = 'flex';
+        } else {
+          item.style.display = 'none';
+        }
+      });
+    };
+
+    filterList('#private-chats-list .contact');
+    filterList('#groups-list .contact');
+  });
   
   // Gestion de l'envoi de message
   dom.messageInput.addEventListener('input', () => {
@@ -470,6 +505,7 @@ async function loadContacts() {
     if (response.ok) {
       state.contacts = await response.json();
       renderPrivateChats();
+      renderContactsModal();
     }
   } catch (err) {
     console.error('Erreur de chargement des contacts:', err);
@@ -485,30 +521,32 @@ function renderSidebarConversations() {
 }
 
 function renderPrivateChats() {
-  dom.contactsList.innerHTML = '';
+  dom.privateChatsList.innerHTML = '';
+  if (!state.contacts || state.contacts.length === 0) return;
 
-  state.contacts.forEach(contact => {
-    const contactEl = document.createElement('div');
-    contactEl.className = 'contact';
-    if (state.currentChat && state.currentChat.id === contact.id) contactEl.classList.add('active');
-    contactEl.dataset.id = contact.id;
+  const recentContacts = state.contacts
+    .filter(c => c.lastMessage)
+    .sort((a, b) => new Date(b.lastMessageDate) - new Date(a.lastMessageDate));
 
-    contactEl.innerHTML = `
+  recentContacts.forEach(contact => {
+    const chatEl = document.createElement('div');
+    chatEl.className = 'contact';
+    if (state.currentChat && state.currentChat.id === contact.id) chatEl.classList.add('active');
+    chatEl.dataset.id = contact.id;
+    chatEl.innerHTML = `
       <div class="contact-avatar">
         <img src="${contact.avatar || 'https://i.pravatar.cc/150'}" alt="Avatar de ${contact.name}">
+        <span class="contact-status ${contact.online ? 'online' : 'offline'}"></span>
       </div>
       <div class="contact-info">
         <div class="contact-name">${contact.name}</div>
         <div class="contact-last-msg">${contact.lastMessage || ''}</div>
       </div>
-      ${contact.unreadCount ? `<div class="unread-count">${contact.unreadCount}</div>` : ''}
+      ${contact.unreadCount > 0 ? `<div class="unread-count">${contact.unreadCount}</div>` : ''}
     `;
 
-    contactEl.addEventListener('click', () => {
-      selectChat(contact);
-    });
-
-    dom.contactsList.appendChild(contactEl);
+    chatEl.addEventListener('click', () => selectChat(contact));
+    dom.privateChatsList.appendChild(chatEl);
   });
 }
 
@@ -608,9 +646,12 @@ async function selectChat(contact) {
   state.currentChat = contact;
   state.currentGroup = null;
 
-  document.querySelectorAll('#groups-list .contact').forEach(c => c.classList.remove('active'));
-  document.querySelectorAll('#contacts-list .contact').forEach(c => c.classList.remove('active'));
-  const active = dom.contactsList.querySelector(`[data-id="${contact.id}"]`);
+  dom.welcomeScreen.classList.add('hidden');
+  dom.messagesContainer.innerHTML = '';
+  dom.loadingSpinner.classList.remove('hidden');
+
+  document.querySelectorAll('#groups-list .contact, #private-chats-list .contact').forEach(c => c.classList.remove('active'));
+  const active = dom.privateChatsList.querySelector(`[data-id="${contact.id}"]`);
   if (active) active.classList.add('active');
   
   // Mettre à jour l'interface
@@ -628,6 +669,7 @@ async function selectChat(contact) {
   
   // Charger les messages
   await loadMessages(contact.id);
+  dom.loadingSpinner.classList.add('hidden');
   
   // Marquer les messages comme lus
   if (state.socket) {
@@ -646,8 +688,11 @@ async function selectGroup(group) {
   state.currentGroup = group;
   state.currentChat = null;
 
-  document.querySelectorAll('#groups-list .contact').forEach(c => c.classList.remove('active'));
-  document.querySelectorAll('#contacts-list .contact').forEach(c => c.classList.remove('active'));
+  dom.welcomeScreen.classList.add('hidden');
+  dom.messagesContainer.innerHTML = '';
+  dom.loadingSpinner.classList.remove('hidden');
+
+  document.querySelectorAll('#groups-list .contact, #private-chats-list .contact').forEach(c => c.classList.remove('active'));
   const active = dom.groupsList.querySelector(`[data-id="${group.id}"]`);
   if (active) active.classList.add('active');
 
@@ -667,6 +712,7 @@ async function selectGroup(group) {
   
   // Charger les messages
   await loadMessages(group.id, true);
+  dom.loadingSpinner.classList.add('hidden');
   
   // Marquer les messages comme lus
   if (state.socket) {
