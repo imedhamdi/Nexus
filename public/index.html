@@ -230,7 +230,7 @@
     </div>
     
     <!-- Call UI -->
-    <div id="call-preview-container" class="call-ui">
+    <div id="call-preview-container" class="call-ui hidden">
         <video id="preview-video" autoplay muted playsinline aria-hidden="true"></video>
         <div class="call-info">
             <div class="call-name" id="call-partner-name">Préparation de l'appel</div>
@@ -243,7 +243,7 @@
         </div>
     </div>
     
-    <div id="call-container" class="call-ui">
+    <div id="call-container" class="call-ui hidden">
         <video id="remote-video" autoplay playsinline aria-label="Vidéo de votre contact"></video>
         <video id="local-video" autoplay muted playsinline aria-label="Votre vidéo"></video>
         <div class="call-info">
@@ -264,7 +264,7 @@
     </div>
     
     <!-- Group Creation Modal -->
-    <div id="group-modal" class="modal-overlay">
+    <div id="group-modal" class="modal-overlay hidden">
         <div class="modal-content">
             <div class="modal-header">
                 <h3 class="modal-title">Créer un groupe</h3>
@@ -300,7 +300,6 @@
     
     <!-- Socket.io -->
     <script src="/socket.io/socket.io.js"></script>
-    
-<script src="main.js" defer></script>
+    <script src="main.js" defer></script>
 </body>
 </html>
