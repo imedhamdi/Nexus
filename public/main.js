@@ -34,6 +34,7 @@ const dom = {
   messageInput: document.getElementById('message-input'),
   messagesContainer: document.getElementById('messages-container'),
   contactsList: document.getElementById('contacts-list'),
+  groupsList: document.getElementById('groups-list'),
   userAvatar: document.getElementById('user-avatar'),
   userName: document.getElementById('user-name'),
   userUsername: document.getElementById('user-username'),
@@ -53,6 +54,10 @@ const dom = {
   groupModal: document.getElementById('group-modal'),
   closeGroupModal: document.getElementById('close-group-modal'),
   createGroupForm: document.getElementById('create-group-form'),
+  attachBtn: document.getElementById('attach-btn'),
+  fileInput: document.getElementById('file-input'),
+  contactsLink: document.getElementById('contacts-link'),
+  settingsLink: document.getElementById('settings-link'),
   callContainer: document.getElementById('call-container'),
   callPreviewContainer: document.getElementById('call-preview-container'),
   localVideo: document.getElementById('local-video'),
@@ -252,6 +257,30 @@ function setupAppListeners() {
     dom.sidebar.classList.remove('active');
     dom.sidebarOverlay.classList.remove('active');
   });
+
+  // Gestion de l'attachement de fichier
+  dom.attachBtn.addEventListener('click', () => {
+    dom.fileInput.click();
+  });
+
+  dom.fileInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      uploadFile(file);
+    }
+    e.target.value = '';
+  });
+
+  // Liens de navigation non implémentés
+  dom.contactsLink.addEventListener('click', (e) => {
+    e.preventDefault();
+    showToast('Fonctionnalité à venir');
+  });
+
+  dom.settingsLink.addEventListener('click', (e) => {
+    e.preventDefault();
+    showToast('Fonctionnalité à venir');
+  });
   
   // Gestion de l'envoi de message
   dom.messageInput.addEventListener('input', () => {
@@ -394,10 +423,12 @@ async function loadContacts() {
  */
 function renderContacts() {
   dom.contactsList.innerHTML = '';
-  
+
   state.contacts.forEach(contact => {
     const contactEl = document.createElement('div');
     contactEl.className = 'contact';
+    if (state.currentChat && state.currentChat.id === contact.id) contactEl.classList.add('active');
+    contactEl.dataset.id = contact.id;
     contactEl.innerHTML = `
       <div class="contact-avatar">
         <img src="${contact.avatar || 'https://i.pravatar.cc/150'}" alt="Avatar de ${contact.name}">
@@ -442,12 +473,13 @@ async function loadGroups() {
  * Affiche la liste des groupes dans le DOM
  */
 function renderGroups() {
-  const groupsList = document.createElement('div');
-  groupsList.className = 'groups-list';
-  
+  dom.groupsList.innerHTML = '';
+
   state.groups.forEach(group => {
     const groupEl = document.createElement('div');
     groupEl.className = 'contact';
+    if (state.currentGroup && state.currentGroup.id === group.id) groupEl.classList.add('active');
+    groupEl.dataset.id = group.id;
     groupEl.innerHTML = `
       <div class="contact-avatar">
         <img src="${group.avatar || 'https://i.pravatar.cc/150'}" alt="Avatar du groupe ${group.name}">
@@ -463,15 +495,8 @@ function renderGroups() {
       selectGroup(group);
     });
     
-    groupsList.appendChild(groupEl);
+    dom.groupsList.appendChild(groupEl);
   });
-  
-  const existingGroupsList = document.querySelector('.groups-list');
-  if (existingGroupsList) {
-    existingGroupsList.replaceWith(groupsList);
-  } else {
-    dom.contactsList.parentNode.insertBefore(groupsList, dom.contactsList);
-  }
 }
 
 /**
@@ -480,6 +505,11 @@ function renderGroups() {
 async function selectChat(contact) {
   state.currentChat = contact;
   state.currentGroup = null;
+
+  document.querySelectorAll('#contacts-list .contact').forEach(c => c.classList.remove('active'));
+  const active = dom.contactsList.querySelector(`[data-id="${contact.id}"]`);
+  if (active) active.classList.add('active');
+  document.querySelectorAll('#groups-list .contact').forEach(c => c.classList.remove('active'));
   
   // Mettre à jour l'interface
   dom.chatPartnerName.textContent = contact.name;
@@ -506,6 +536,11 @@ async function selectChat(contact) {
 async function selectGroup(group) {
   state.currentGroup = group;
   state.currentChat = null;
+
+  document.querySelectorAll('#groups-list .contact').forEach(c => c.classList.remove('active'));
+  const active = dom.groupsList.querySelector(`[data-id="${group.id}"]`);
+  if (active) active.classList.add('active');
+  document.querySelectorAll('#contacts-list .contact').forEach(c => c.classList.remove('active'));
   
   // Mettre à jour l'interface
   dom.chatPartnerName.textContent = group.name;
@@ -661,7 +696,7 @@ function renderMessages() {
       actions.querySelectorAll('button').forEach(btn => {
         btn.addEventListener('click', (e) => {
           e.stopPropagation();
-          handleMessageAction(message, btn.dataset.action);
+          handleMessageAction(message, btn.dataset.action, btn);
         });
       });
       
@@ -685,7 +720,7 @@ function renderMessages() {
 /**
  * Gère les actions sur les messages (répondre, modifier, supprimer, etc.)
  */
-function handleMessageAction(message, action) {
+function handleMessageAction(message, action, btn) {
   switch (action) {
     case 'reply':
       state.replyTo = message.id;
@@ -695,11 +730,36 @@ function handleMessageAction(message, action) {
       break;
       
     case 'react':
-      // Afficher un sélecteur d'emoji (implémentation simplifiée)
-      const emoji = prompt('Entrez un emoji:');
-      if (emoji) {
-        state.socket.emit('add-reaction', { messageId: message.id, emoji });
-      }
+      const picker = document.createElement('div');
+      picker.className = 'reaction-picker';
+      picker.style.background = '#333';
+      picker.style.padding = '4px';
+      picker.style.borderRadius = '6px';
+      picker.style.display = 'flex';
+      picker.style.gap = '4px';
+      ['👍','❤️','😂','😢','😮'].forEach(em => {
+        const span = document.createElement('span');
+        span.className = 'reaction-option';
+        span.textContent = em;
+        span.style.cursor = 'pointer';
+        span.addEventListener('click', () => {
+          state.socket.emit('add-reaction', { messageId: message.id, emoji: em });
+          picker.remove();
+        });
+        picker.appendChild(span);
+      });
+      document.body.appendChild(picker);
+      const rect = btn.getBoundingClientRect();
+      picker.style.position = 'absolute';
+      picker.style.left = `${rect.left}px`;
+      picker.style.top = `${rect.top - 40}px`;
+      const remove = (e) => {
+        if (!picker.contains(e.target)) {
+          picker.remove();
+          document.removeEventListener('click', remove);
+        }
+      };
+      setTimeout(() => document.addEventListener('click', remove));
       break;
       
     case 'edit':
@@ -775,6 +835,47 @@ function sendMessage() {
   dom.sendBtn.disabled = true;
   state.replyTo = null;
   dom.replyPreview.classList.add('hidden');
+}
+
+/**
+ * Upload un fichier dans la conversation courante
+ */
+async function uploadFile(file) {
+  if (!state.currentChat && !state.currentGroup) {
+    showToast('Sélectionnez une conversation', 'error');
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  if (state.currentChat) {
+    formData.append('chatId', state.currentChat.id);
+    formData.append('chatType', 'private');
+  } else {
+    formData.append('chatId', state.currentGroup.id);
+    formData.append('chatType', 'group');
+  }
+
+  showToast('Envoi du fichier...');
+  try {
+    const response = await fetch(`${config.apiBaseUrl}/api/upload-file`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('nexus_token')}`
+      },
+      body: formData
+    });
+    if (response.ok) {
+      showToast('Fichier envoyé', 'success');
+    } else {
+      const { error } = await response.json();
+      showToast(error || 'Erreur lors de l\'envoi', 'error');
+    }
+  } catch (err) {
+    console.error('Upload error:', err);
+    showToast('Erreur lors de l\'envoi du fichier', 'error');
+  }
 }
 
 /**
@@ -1115,8 +1216,8 @@ async function acceptCall(caller, isVideo) {
     
     // Initialiser la connexion WebRTC
     initPeerConnection();
-    
-    // Créer et envoyer la réponse
+    await state.peerConnection.setRemoteDescription(new RTCSessionDescription(state.pendingOffer.offer));
+
     const answer = await state.peerConnection.createAnswer();
     await state.peerConnection.setLocalDescription(answer);
     
@@ -1124,6 +1225,8 @@ async function acceptCall(caller, isVideo) {
       recipient: caller,
       answer
     });
+
+    state.pendingOffer = null;
     
     // Arrêter la sonnerie
     dom.callSound.pause();

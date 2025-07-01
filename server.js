@@ -203,6 +203,9 @@ const User = mongoose.model('User', UserSchema);
 const Message = mongoose.model('Message', MessageSchema);
 const Group = mongoose.model('Group', GroupSchema);
 
+// Utilitaire pour valider les ObjectId
+const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
+
 // Configuration Agenda pour les messages éphémères
 const agenda = new Agenda({ mongo: mongoose.connection });
 agenda.define('cleanup-expired-messages', async () => {
@@ -484,20 +487,34 @@ app.post('/api/upload-avatar', authenticate, upload.single('avatar'), async (req
 
 app.post('/api/upload-file', authenticate, upload.single('file'), async (req, res) => {
   try {
-    const { recipient } = req.body; // recipient est l'ID du destinataire
-    
-    if (!recipient) {
-      return res.status(400).json({ error: 'Destinataire manquant' });
+    const { chatId, chatType } = req.body;
+
+    if (!chatId || !chatType) {
+      return res.status(400).json({ error: 'chatId et chatType requis' });
     }
 
     if (!req.file) {
       return res.status(400).json({ error: 'Aucun fichier uploadé' });
     }
 
-    // Vérification que le destinataire existe
-    const recipientUser = await User.findById(recipient);
-    if (!recipientUser) {
-      return res.status(404).json({ error: 'Destinataire non trouvé' });
+    let recipientUser = null;
+    let group = null;
+
+    if (chatType === 'private') {
+      recipientUser = await User.findById(chatId);
+      if (!recipientUser) {
+        return res.status(404).json({ error: 'Destinataire non trouvé' });
+      }
+    } else if (chatType === 'group') {
+      group = await Group.findById(chatId);
+      if (!group) {
+        return res.status(404).json({ error: 'Groupe non trouvé' });
+      }
+      if (!group.members.some(m => m.equals(req.user._id))) {
+        return res.status(403).json({ error: 'Action non autorisée' });
+      }
+    } else {
+      return res.status(400).json({ error: 'chatType invalide' });
     }
 
     // Détermination du type de fichier
@@ -507,16 +524,12 @@ app.post('/api/upload-file', authenticate, upload.single('file'), async (req, re
     // Création du message
     const message = new Message({
       sender: req.user._id,
-      recipient: recipientUser._id,
       content: req.file.originalname,
       type: fileType,
-      fileUrl
+      fileUrl,
+      ...(chatType === 'private' ? { recipient: recipientUser._id } : { group: group._id })
     });
     await message.save();
-
-    // Emission en temps réel pour l'expéditeur et le destinataire
-    const recipientSocketId = connectedUsers[recipientUser.username];
-    const senderSocketId = connectedUsers[req.user.username];
 
     const payload = {
       id: message._id,
@@ -527,13 +540,24 @@ app.post('/api/upload-file', authenticate, upload.single('file'), async (req, re
       type: fileType,
       fileUrl,
       createdAt: message.createdAt,
-      read: false
+      read: false,
+      ...(chatType === 'group' ? { group: group._id.toString() } : { recipient: recipientUser.username })
     };
 
-    if (recipientSocketId) io.to(recipientSocketId).emit('new-message', payload);
-    if (senderSocketId) io.to(senderSocketId).emit('new-message', payload);
+    if (chatType === 'private') {
+      const recipientSocketId = connectedUsers[recipientUser.username];
+      const senderSocketId = connectedUsers[req.user.username];
+      if (recipientSocketId) io.to(recipientSocketId).emit('new-message', payload);
+      if (senderSocketId) io.to(senderSocketId).emit('new-message', payload);
+    } else {
+      const members = await User.find({ _id: { $in: group.members } }).select('username');
+      members.forEach(u => {
+        const sid = connectedUsers[u.username];
+        if (sid) io.to(sid).emit('new-group-message', payload);
+      });
+    }
 
-    res.status(200).json({ success: true });
+    res.status(200).json({ success: true, messageId: message._id });
   } catch (err) {
     console.error('[UPLOAD FILE] Erreur:', err);
     res.status(500).json({ error: 'Erreur lors de l\'upload du fichier' });
@@ -547,6 +571,10 @@ app.post('/api/groups', authenticate, async (req, res) => {
 
     if (!name || !Array.isArray(usernames)) {
       return res.status(400).json({ error: 'Nom et membres requis' });
+    }
+
+    if (usernames.includes(req.user.username)) {
+      return res.status(400).json({ error: 'Ne vous ajoutez pas vous-même' });
     }
 
     if (name.length < 3 || name.length > 50) {
@@ -584,6 +612,10 @@ app.post('/api/groups', authenticate, async (req, res) => {
 // Modifier un groupe
 app.patch('/api/groups/:id', authenticate, async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ error: 'ID invalide' });
+    }
+
     const group = await Group.findById(req.params.id);
     if (!group) {
       return res.status(404).json({ error: 'Groupe non trouvé' });
@@ -696,6 +728,10 @@ app.get('/api/messages', authenticate, async (req, res) => {
 // Récupérer les messages d'un groupe
 app.get('/api/groups/:id/messages', authenticate, async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ error: 'ID invalide' });
+    }
+
     const { page = 1, limit = 50 } = req.query;
     const group = await Group.findById(req.params.id);
     if (!group) {
@@ -740,6 +776,10 @@ app.get('/api/groups/:id/messages', authenticate, async (req, res) => {
 // Modifier un message existant
 app.put('/api/messages/:id', authenticate, async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ error: 'ID invalide' });
+    }
+
     const { content } = req.body;
     if (!content) {
       return res.status(400).json({ error: 'Contenu manquant' });
@@ -780,6 +820,10 @@ app.put('/api/messages/:id', authenticate, async (req, res) => {
 // Supprimer un message (soft delete)
 app.delete('/api/messages/:id', authenticate, async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.id)) {
+      return res.status(400).json({ error: 'ID invalide' });
+    }
+
     const message = await Message.findById(req.params.id);
     if (!message) {
       return res.status(404).json({ error: 'Message non trouvé' });
