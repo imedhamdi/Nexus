@@ -12,7 +12,6 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
     <link rel="stylesheet" href="style.css">
-   
 </head>
 <body>
     <!-- Authentication Screens -->
@@ -142,23 +141,23 @@
                     </div>
                     <div class="chat-partner-info">
                         <div id="chat-partner-name" class="chat-partner-name">Jean Dupont</div>
-                    <div id="chat-partner-status-text" class="chat-partner-status">
-                        <span class="status-dot online"></span>
-                        <span>En ligne</span>
+                        <div id="chat-partner-status-text" class="chat-partner-status">
+                            <span class="status-dot online"></span>
+                            <span>En ligne</span>
+                        </div>
+                        <div id="typing-indicator-container" class="typing-indicator-container"></div>
                     </div>
-                    <div id="typing-indicator-container" class="typing-indicator-container"></div>
                 </div>
-            </div>
 
-            <div class="chat-actions">
-                <button class="chat-action-btn group-settings hidden" aria-label="Gérer le groupe">
-                    <i class="fas fa-users-cog"></i>
-                </button>
-                <button class="chat-action-btn call" aria-label="Appeler">
-                    <i class="fas fa-phone-alt"></i>
-                </button>
-                <button class="chat-action-btn video" aria-label="Appel vidéo">
-                    <i class="fas fa-video"></i>
+                <div class="chat-actions">
+                    <button class="chat-action-btn group-settings hidden" aria-label="Gérer le groupe">
+                        <i class="fas fa-users-cog"></i>
+                    </button>
+                    <button class="chat-action-btn call" aria-label="Appeler">
+                        <i class="fas fa-phone-alt"></i>
+                    </button>
+                    <button class="chat-action-btn video" aria-label="Appel vidéo">
+                        <i class="fas fa-video"></i>
                     </button>
                 </div>
             </header>
@@ -281,7 +280,8 @@
                 </button>
             </div>
             <div id="modal-contacts-list" class="modal-contacts-list">
-                </div>
+                <!-- Contacts will be dynamically added here -->
+            </div>
         </div>
     </div>
     

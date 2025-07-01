@@ -1,6 +1,7 @@
 /**
- * Nexus Chat - Client JavaScript
+ * Nexus Chat - Client JavaScript Complet
  * Application de messagerie sécurisée avec WebSocket et WebRTC
+ * Version complète et fonctionnelle
  */
 
 // Configuration globale
@@ -16,7 +17,8 @@ const config = {
   },
   messageLimit: 50,
   typingTimeout: 2000,
-  toastDuration: 5000
+  toastDuration: 5000,
+  maxFileSize: 10 * 1024 * 1024 // 10MB
 };
 
 // Éléments DOM principaux
@@ -85,11 +87,38 @@ const dom = {
   callSound: document.getElementById('call-sound')
 };
 
+// État de l'application
+const state = {
+  currentUser: null,
+  currentChat: null,
+  currentGroup: null,
+  contacts: [],
+  groups: [],
+  messages: [],
+  typingUsers: new Set(),
+  replyTo: null,
+  socket: null,
+  peerConnection: null,
+  localStream: null,
+  remoteStream: null,
+  callData: null,
+  pendingOffer: null,
+  isCaller: false,
+  isMuted: false,
+  isVideoOff: false,
+  iceServers: [],
+  typingTimeout: null
+};
+
 /**
  * Joue un élément audio avec une solution de secours utilisant Web Audio API
  */
 function playAudio(element) {
   if (!element) return;
+  
+  // Réinitialiser la position si déjà en cours de lecture
+  element.currentTime = 0;
+  
   const playPromise = element.play();
   if (playPromise && playPromise.catch) {
     playPromise.catch(() => {
@@ -109,27 +138,9 @@ function playAudio(element) {
   }
 }
 
-// État de l'application
-const state = {
-  currentUser: null,
-  currentChat: null,
-  currentGroup: null,
-  contacts: [],
-  groups: [],
-  messages: [],
-  typingUsers: new Set(),
-  replyTo: null,
-  socket: null,
-  peerConnection: null,
-  localStream: null,
-  remoteStream: null,
-  callData: null,
-  isCaller: false,
-  isMuted: false,
-  isVideoOff: false,
-  iceServers: []
-};
-
+/**
+ * Déconnecte l'utilisateur et recharge la page
+ */
 function logout() {
   localStorage.removeItem('nexus_token');
   if (state.socket) {
@@ -273,6 +284,13 @@ function setupAuthListeners() {
     const file = e.target.files[0];
     if (!file) return;
     
+    // Vérification de la taille du fichier
+    if (file.size > config.maxFileSize) {
+      showToast('La taille du fichier dépasse 10MB', 'error');
+      e.target.value = '';
+      return;
+    }
+    
     const reader = new FileReader();
     reader.onload = (event) => {
       dom.avatarPreview.src = event.target.result;
@@ -309,6 +327,11 @@ function setupAppListeners() {
   dom.fileInput.addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (file) {
+      if (file.size > config.maxFileSize) {
+        showToast('La taille du fichier dépasse 10MB', 'error');
+        e.target.value = '';
+        return;
+      }
       uploadFile(file);
     }
     e.target.value = '';
@@ -343,6 +366,7 @@ function setupAppListeners() {
     logout();
   });
 
+  // Recherche dans la sidebar
   dom.sidebarSearch.addEventListener('input', (e) => {
     const searchTerm = e.target.value.toLowerCase();
 
@@ -454,8 +478,7 @@ function setupAppListeners() {
 
   dom.groupSettingsBtn.addEventListener('click', () => {
     if (state.currentGroup) {
-      alert(`Gestion du groupe: ${state.currentGroup.name}`);
-      console.log('Membres:', state.currentGroup.members);
+      alert(`Gestion du groupe: ${state.currentGroup.name}\nMembres: ${state.currentGroup.memberCount}`);
     }
   });
   
@@ -513,13 +536,8 @@ async function loadContacts() {
 }
 
 /**
- * Affiche les conversations récentes dans la sidebar
- * (à implémenter ultérieurement)
+ * Affiche les conversations privées dans la sidebar
  */
-function renderSidebarConversations() {
-  // Future implementation
-}
-
 function renderPrivateChats() {
   dom.privateChatsList.innerHTML = '';
   if (!state.contacts || state.contacts.length === 0) return;
@@ -550,10 +568,13 @@ function renderPrivateChats() {
   });
 }
 
+/**
+ * Affiche la liste des contacts dans la modale
+ */
 function renderContactsModal() {
   dom.modalContactsList.innerHTML = '';
   if (!state.contacts || state.contacts.length === 0) {
-    dom.modalContactsList.innerHTML = '<p>Aucun contact trouvé.</p>';
+    dom.modalContactsList.innerHTML = '<p class="no-contacts">Aucun contact trouvé.</p>';
     return;
   }
 
@@ -563,17 +584,17 @@ function renderContactsModal() {
     contactEl.dataset.id = contact.id;
 
     contactEl.innerHTML = `
-        <div class="contact-avatar">
-            <img src="${contact.avatar || 'https://i.pravatar.cc/150'}" alt="Avatar de ${contact.name}">
-        </div>
-        <div class="contact-info">
-            <div class="contact-name">${contact.name}</div>
-            <div class="contact-username">@${contact.username}</div>
-        </div>
-        <div class="contact-status-indicator">
-            <span class="status-dot ${contact.online ? 'online' : 'offline'}"></span>
-            <span>${contact.online ? 'En ligne' : 'Hors ligne'}</span>
-        </div>
+      <div class="contact-avatar">
+        <img src="${contact.avatar || 'https://i.pravatar.cc/150'}" alt="Avatar de ${contact.name}">
+      </div>
+      <div class="contact-info">
+        <div class="contact-name">${contact.name}</div>
+        <div class="contact-username">@${contact.username}</div>
+      </div>
+      <div class="contact-status-indicator">
+        <span class="status-dot ${contact.online ? 'online' : 'offline'}"></span>
+        <span>${contact.online ? 'En ligne' : 'Hors ligne'}</span>
+      </div>
     `;
 
     contactEl.addEventListener('click', () => {
@@ -696,7 +717,6 @@ async function selectGroup(group) {
   const active = dom.groupsList.querySelector(`[data-id="${group.id}"]`);
   if (active) active.classList.add('active');
 
-  
   // Mettre à jour l'interface
   dom.chatPartnerName.textContent = group.name;
   dom.chatPartnerAvatar.src = group.avatar || 'https://i.pravatar.cc/150';
@@ -1111,6 +1131,7 @@ function handleNewMessage(message) {
     const contact = state.contacts.find(c => c.username === message.sender);
     if (contact) {
       contact.unreadCount = (contact.unreadCount || 0) + 1;
+      renderPrivateChats();
       renderContactsModal();
     }
     
@@ -1211,12 +1232,10 @@ function updateTypingIndicator() {
     const users = Array.from(state.typingUsers).join(', ');
     dom.typingIndicatorContainer.textContent = `${users} est en train d'écrire...`;
     dom.typingIndicatorContainer.classList.add('visible');
-    dom.typingIndicatorContainer.classList.remove('hidden');
     dom.chatPartnerStatus.classList.add('hidden');
   } else {
     dom.typingIndicatorContainer.textContent = '';
     dom.typingIndicatorContainer.classList.remove('visible');
-    dom.typingIndicatorContainer.classList.add('hidden');
     dom.chatPartnerStatus.classList.remove('hidden');
   }
 }
@@ -1289,7 +1308,7 @@ function showIncomingCall(caller, callerName, callerAvatar, isVideo) {
   toast.innerHTML = `
     <div class="toast-header">
       <div class="toast-title">
-        <i class="fas fa-phone"></i>
+        <i class="fas fa-${isVideo ? 'video' : 'phone'}"></i>
         Appel ${isVideo ? 'vidéo' : 'audio'} entrant
       </div>
     </div>
