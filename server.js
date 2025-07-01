@@ -985,13 +985,19 @@ io.on('connection', (socket) => {
     try {
       // Validation des données
       if (!recipient || !content) {
-        return callback({ success: false, error: 'Destinataire et contenu requis' });
+        if (typeof callback === 'function') {
+          return callback({ success: false, error: 'Destinataire et contenu requis' });
+        }
+        return;
       }
 
       // Vérification que le destinataire existe
       const recipientUser = await User.findById(recipient);
       if (!recipientUser) {
-        return callback({ success: false, error: 'Destinataire non trouvé' });
+        if (typeof callback === 'function') {
+          return callback({ success: false, error: 'Destinataire non trouvé' });
+        }
+        return;
       }
 
       // Création et sauvegarde du message
@@ -1034,13 +1040,17 @@ io.on('connection', (socket) => {
       if (recipientSocketId) io.to(recipientSocketId).emit('new-message', payload);
       if (senderSocketId) io.to(senderSocketId).emit('new-message', payload);
 
-      callback({ 
-        success: true, 
-        messageId: message._id 
-      });
+      if (typeof callback === 'function') {
+        callback({
+          success: true,
+          messageId: message._id
+        });
+      }
     } catch (err) {
       console.error('[SEND MESSAGE] Erreur:', err);
-      callback({ success: false, error: 'Erreur d\'envoi du message' });
+      if (typeof callback === 'function') {
+        callback({ success: false, error: 'Erreur d\'envoi du message' });
+      }
     }
   });
 
@@ -1048,16 +1058,25 @@ io.on('connection', (socket) => {
   socket.on('send-group-message', async ({ groupId, content, type = 'text', replyTo, expiresIn }, callback) => {
     try {
       if (!groupId || !content) {
-        return callback({ success: false, error: 'Groupe et contenu requis' });
+        if (typeof callback === 'function') {
+          return callback({ success: false, error: 'Groupe et contenu requis' });
+        }
+        return;
       }
 
       const group = await Group.findById(groupId);
       if (!group) {
-        return callback({ success: false, error: 'Groupe non trouvé' });
+        if (typeof callback === 'function') {
+          return callback({ success: false, error: 'Groupe non trouvé' });
+        }
+        return;
       }
 
       if (!group.members.some(m => m.equals(socket.user.id))) {
-        return callback({ success: false, error: 'Action non autorisée' });
+        if (typeof callback === 'function') {
+          return callback({ success: false, error: 'Action non autorisée' });
+        }
+        return;
       }
 
       let replySnippet;
@@ -1100,11 +1119,15 @@ io.on('connection', (socket) => {
         if (sid) io.to(sid).emit('new-group-message', payload);
       });
 
-      callback({ success: true, messageId: message._id });
+      if (typeof callback === 'function') {
+        callback({ success: true, messageId: message._id });
+      }
 
     } catch (err) {
       console.error('[SEND GROUP MESSAGE] Erreur:', err);
-      callback({ success: false, error: 'Erreur lors de l\'envoi du message' });
+      if (typeof callback === 'function') {
+        callback({ success: false, error: 'Erreur lors de l\'envoi du message' });
+      }
     }
   });
 
@@ -1112,7 +1135,12 @@ io.on('connection', (socket) => {
   socket.on('add-reaction', async ({ messageId, emoji }, callback) => {
     try {
       const message = await Message.findById(messageId);
-      if (!message) return callback({ success: false, error: 'Message non trouvé' });
+      if (!message) {
+        if (typeof callback === 'function') {
+          return callback({ success: false, error: 'Message non trouvé' });
+        }
+        return;
+      }
 
       const userId = socket.user.id.toString();
       const list = message.reactions.get(emoji) || [];
@@ -1120,7 +1148,12 @@ io.on('connection', (socket) => {
       if (index !== -1) {
         list.splice(index, 1);
       } else {
-        if (list.length >= 5) return callback({ success: false, error: 'Limite atteinte' });
+        if (list.length >= 5) {
+          if (typeof callback === 'function') {
+            return callback({ success: false, error: 'Limite atteinte' });
+          }
+          return;
+        }
         list.push(socket.user.id);
       }
       message.reactions.set(emoji, list);
@@ -1144,10 +1177,14 @@ io.on('connection', (socket) => {
       const senderSid = connectedUsers[socket.user.username];
       if (senderSid) io.to(senderSid).emit('reaction-updated', payload);
 
-      callback({ success: true });
+      if (typeof callback === 'function') {
+        callback({ success: true });
+      }
     } catch (err) {
       console.error('[ADD REACTION] Erreur:', err);
-      callback({ success: false, error: 'Erreur lors de la réaction' });
+      if (typeof callback === 'function') {
+        callback({ success: false, error: 'Erreur lors de la réaction' });
+      }
     }
   });
 
@@ -1155,10 +1192,18 @@ io.on('connection', (socket) => {
   socket.on('edit-message', async ({ messageId, content }, callback) => {
     try {
       const message = await Message.findById(messageId);
-      if (!message) return callback({ success: false, error: 'Message non trouvé' });
+      if (!message) {
+        if (typeof callback === 'function') {
+          return callback({ success: false, error: 'Message non trouvé' });
+        }
+        return;
+      }
 
       if (message.sender.toString() !== socket.user.id) {
-        return callback({ success: false, error: 'Action non autorisée' });
+        if (typeof callback === 'function') {
+          return callback({ success: false, error: 'Action non autorisée' });
+        }
+        return;
       }
 
       message.editHistory.push({ content: message.content, editedAt: new Date() });
@@ -1182,10 +1227,14 @@ io.on('connection', (socket) => {
         });
       }
 
-      callback({ success: true });
+      if (typeof callback === 'function') {
+        callback({ success: true });
+      }
     } catch (err) {
       console.error('[EDIT MESSAGE SOCKET] Erreur:', err);
-      callback({ success: false, error: 'Erreur lors de la modification du message' });
+      if (typeof callback === 'function') {
+        callback({ success: false, error: 'Erreur lors de la modification du message' });
+      }
     }
   });
 
@@ -1193,10 +1242,18 @@ io.on('connection', (socket) => {
   socket.on('delete-message', async ({ messageId }, callback) => {
     try {
       const message = await Message.findById(messageId);
-      if (!message) return callback({ success: false, error: 'Message non trouvé' });
+      if (!message) {
+        if (typeof callback === 'function') {
+          return callback({ success: false, error: 'Message non trouvé' });
+        }
+        return;
+      }
 
       if (message.sender.toString() !== socket.user.id) {
-        return callback({ success: false, error: 'Action non autorisée' });
+        if (typeof callback === 'function') {
+          return callback({ success: false, error: 'Action non autorisée' });
+        }
+        return;
       }
 
       message.deleted = true;
@@ -1218,10 +1275,14 @@ io.on('connection', (socket) => {
         });
       }
 
-      callback({ success: true });
+      if (typeof callback === 'function') {
+        callback({ success: true });
+      }
     } catch (err) {
       console.error('[DELETE MESSAGE SOCKET] Erreur:', err);
-      callback({ success: false, error: 'Erreur lors de la suppression du message' });
+      if (typeof callback === 'function') {
+        callback({ success: false, error: 'Erreur lors de la suppression du message' });
+      }
     }
   });
 
@@ -1320,9 +1381,13 @@ server.listen(PORT, () => {
 });
 
 // Gestion propre des arrêts
-process.on('SIGINT', () => {
-  mongoose.connection.close(() => {
+process.on('SIGINT', async () => {
+  try {
+    await mongoose.connection.close();
     console.log('[MONGODB] Connexion fermée');
     process.exit(0);
-  });
+  } catch (err) {
+    console.error('[MONGODB] Erreur lors de la fermeture de la connexion:', err);
+    process.exit(1);
+  }
 });
