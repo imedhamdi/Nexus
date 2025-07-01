@@ -22,6 +22,6 @@
     "multer": "^1.4.5-lts.1",
     "cors": "^2.8.5",
     "socket.io": "^4.7.2",
-    "agenda": "^5.0.0"
+    "express-rate-limit": "^7.0.0"
   }
 }

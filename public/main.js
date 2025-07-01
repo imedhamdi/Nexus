@@ -910,6 +910,7 @@ function connectSocket() {
   state.socket.on('typing', handleTyping);
   state.socket.on('stop-typing', handleStopTyping);
   state.socket.on('users-updated', handleUsersUpdated);
+  state.socket.on('group-invitation', handleGroupInvitation);
   state.socket.on('webrtc-offer', handleWebRTCOffer);
   state.socket.on('webrtc-answer', handleWebRTCAnswer);
   state.socket.on('webrtc-ice-candidate', handleWebRTCICECandidate);
@@ -1064,6 +1065,13 @@ function handleUsersUpdated(usernames) {
 }
 
 /**
+ * Gère la réception d'une invitation de groupe
+ */
+function handleGroupInvitation({ id, name }) {
+  showGroupInvitationToast(id, name);
+}
+
+/**
  * Fait défiler la conversation vers le bas
  */
 function scrollToBottom() {
@@ -1136,6 +1144,42 @@ function showIncomingCall(caller, callerName, callerAvatar, isVideo) {
   // Jouer la sonnerie
   dom.callSound.play().catch(e => console.error('Erreur de lecture du son:', e));
   
+  return toast;
+}
+
+/**
+ * Affiche une invitation de groupe avec actions
+ */
+function showGroupInvitationToast(groupId, groupName) {
+  const toast = document.createElement('div');
+  toast.className = 'toast group-invite';
+  toast.innerHTML = `
+    <div class="toast-body">Vous avez été invité à rejoindre le groupe <strong>${groupName}</strong></div>
+    <div class="toast-actions">
+      <button class="toast-btn accept">Accepter</button>
+      <button class="toast-btn decline">Refuser</button>
+    </div>
+  `;
+
+  toast.querySelector('.accept').addEventListener('click', async () => {
+    await fetch(`${config.apiBaseUrl}/api/groups/${groupId}/invitations/accept`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${localStorage.getItem('nexus_token')}` }
+    });
+    toast.remove();
+    loadGroups();
+  });
+
+  toast.querySelector('.decline').addEventListener('click', async () => {
+    await fetch(`${config.apiBaseUrl}/api/groups/${groupId}/invitations/decline`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${localStorage.getItem('nexus_token')}` }
+    });
+    toast.remove();
+    loadGroups();
+  });
+
+  dom.toastContainer.appendChild(toast);
   return toast;
 }
 

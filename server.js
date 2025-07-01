@@ -21,7 +21,7 @@ const jwt = require('jsonwebtoken');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const helmet = require('helmet');
-const Agenda = require('agenda');
+const rateLimit = require('express-rate-limit');
 
 // Configuration des serveurs STUN/TURN pour WebRTC
 const iceServers = process.env.ICE_SERVERS
@@ -53,6 +53,15 @@ app.use(helmet({
     },
   }
 }));
+
+// Limiteur de débit pour les routes sensibles
+const authLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Trop de requêtes, réessayez plus tard.' }
+});
 
 // Configuration de Socket.io
 const io = new Server(server, {
@@ -117,6 +126,7 @@ const GroupSchema = new mongoose.Schema({
   },
   avatar: String,
   members: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  pendingInvitations: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   editHistory: [{
     name: String,
@@ -206,14 +216,6 @@ const Group = mongoose.model('Group', GroupSchema);
 // Utilitaire pour valider les ObjectId
 const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
 
-// Configuration Agenda pour les messages éphémères
-const agenda = new Agenda({ mongo: mongoose.connection });
-agenda.define('cleanup-expired-messages', async () => {
-  await Message.deleteMany({ expiresAt: { $lte: new Date() } });
-});
-agenda.start().then(() => {
-  agenda.every('1 minute', 'cleanup-expired-messages');
-});
 
 // Configuration Multer pour les uploads
 const uploadsDir = path.join(__dirname, 'uploads');
@@ -317,11 +319,17 @@ io.use(async (socket, next) => {
 });
 
 // Routes API
-app.post('/api/register', upload.single('avatar'), async (req, res) => {
+app.post('/api/register', authLimiter, upload.single('avatar'), async (req, res) => {
   const { username, password, name } = req.body;
 
   if (!username || !password || !name) {
     return res.status(400).json({ error: 'Tous les champs sont requis' });
+  }
+  if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) {
+    return res.status(400).json({ error: 'Nom d\'utilisateur invalide (3-20 caractères alphanumériques ou underscores)' });
+  }
+  if (name.trim().length === 0 || name.length > 50) {
+    return res.status(400).json({ error: 'Le nom doit contenir entre 1 et 50 caractères' });
   }
   if (password.length < 6) {
     return res.status(400).json({ error: 'Le mot de passe doit contenir au moins 6 caractères' });
@@ -370,11 +378,14 @@ app.post('/api/register', upload.single('avatar'), async (req, res) => {
     });
   } catch (err) {
     console.error('[REGISTER] Erreur:', err);
+    if (err.name === 'ValidationError') {
+      return res.status(400).json({ error: err.message });
+    }
     res.status(500).json({ error: 'Erreur lors de l\'inscription' });
   }
 });
 
-app.post('/api/login', async (req, res) => {
+app.post('/api/login', authLimiter, async (req, res) => {
   try {
     const { username, password } = req.body;
 
@@ -417,6 +428,9 @@ app.post('/api/login', async (req, res) => {
     });
   } catch (err) {
     console.error('[LOGIN] Erreur:', err);
+    if (err.name === 'ValidationError') {
+      return res.status(400).json({ error: err.message });
+    }
     res.status(500).json({ error: 'Erreur lors de la connexion' });
   }
 });
@@ -581,30 +595,41 @@ app.post('/api/groups', authenticate, async (req, res) => {
       return res.status(400).json({ error: 'Le nom doit contenir entre 3 et 50 caractères' });
     }
 
-    const users = await User.find({ username: { $in: usernames } });
-    if (users.length !== usernames.length) {
+    const uniqueUsernames = [...new Set(usernames)];
+    if (uniqueUsernames.length !== usernames.length) {
+      return res.status(400).json({ error: 'La liste des utilisateurs contient des doublons' });
+    }
+
+    const users = await User.find({ username: { $in: uniqueUsernames } });
+    if (users.length !== uniqueUsernames.length) {
       return res.status(400).json({ error: 'Certains membres sont introuvables' });
     }
 
-    const memberIds = users.map(u => u._id).concat(req.user._id);
-    const uniqueMembers = Array.from(new Set(memberIds.map(id => id.toString())));
-    if (uniqueMembers.length < 2 || uniqueMembers.length > 100) {
-      return res.status(400).json({ error: 'Le groupe doit avoir entre 2 et 100 membres' });
-    }
+    const invitedIds = users.map(u => u._id);
 
     const group = new Group({
       name,
       avatar,
-      members: uniqueMembers,
+      members: [req.user._id],
+      pendingInvitations: invitedIds,
       createdBy: req.user._id
     });
     await group.save();
 
-    io.emit('group-created', { id: group._id, name: group.name });
+    // Notifier les utilisateurs invités
+    users.forEach(u => {
+      const sid = connectedUsers[u.username];
+      if (sid) {
+        io.to(sid).emit('group-invitation', { id: group._id, name: group.name });
+      }
+    });
 
     res.status(201).json({ success: true, groupId: group._id });
   } catch (err) {
     console.error('[CREATE GROUP] Erreur:', err);
+    if (err.name === 'ValidationError') {
+      return res.status(400).json({ error: err.message });
+    }
     res.status(500).json({ error: 'Erreur lors de la création du groupe' });
   }
 });
@@ -675,6 +700,71 @@ app.get('/api/groups', authenticate, async (req, res) => {
   } catch (err) {
     console.error('[GET GROUPS] Erreur:', err);
     res.status(500).json({ error: 'Erreur lors de la récupération des groupes' });
+  }
+});
+
+// Accepter une invitation de groupe
+app.post('/api/groups/:groupId/invitations/accept', authenticate, async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    if (!isValidObjectId(groupId)) {
+      return res.status(400).json({ error: 'ID invalide' });
+    }
+
+    const group = await Group.findById(groupId);
+    if (!group) {
+      return res.status(404).json({ error: 'Groupe non trouvé' });
+    }
+
+    const userId = req.user._id;
+    if (!group.pendingInvitations.some(id => id.equals(userId))) {
+      return res.status(400).json({ error: 'Invitation introuvable' });
+    }
+
+    group.pendingInvitations = group.pendingInvitations.filter(id => !id.equals(userId));
+    if (!group.members.some(id => id.equals(userId))) {
+      group.members.push(userId);
+    }
+    await group.save();
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[ACCEPT INVITATION] Erreur:', err);
+    if (err.name === 'ValidationError') {
+      return res.status(400).json({ error: err.message });
+    }
+    res.status(500).json({ error: 'Erreur lors de l\'acceptation de l\'invitation' });
+  }
+});
+
+// Refuser une invitation de groupe
+app.post('/api/groups/:groupId/invitations/decline', authenticate, async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    if (!isValidObjectId(groupId)) {
+      return res.status(400).json({ error: 'ID invalide' });
+    }
+
+    const group = await Group.findById(groupId);
+    if (!group) {
+      return res.status(404).json({ error: 'Groupe non trouvé' });
+    }
+
+    const userId = req.user._id;
+    if (!group.pendingInvitations.some(id => id.equals(userId))) {
+      return res.status(400).json({ error: 'Invitation introuvable' });
+    }
+
+    group.pendingInvitations = group.pendingInvitations.filter(id => !id.equals(userId));
+    await group.save();
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[DECLINE INVITATION] Erreur:', err);
+    if (err.name === 'ValidationError') {
+      return res.status(400).json({ error: err.message });
+    }
+    res.status(500).json({ error: 'Erreur lors du refus de l\'invitation' });
   }
 });
 
