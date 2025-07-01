@@ -883,8 +883,14 @@ async function uploadFile(file) {
  */
 function connectSocket() {
   if (state.socket) return;
-  
-  state.socket = io(config.socketOptions);
+
+  // Toujours récupérer le token courant depuis le stockage pour gérer
+  // les connexions établies après un login sans rechargement de la page
+  const token = localStorage.getItem('nexus_token');
+  state.socket = io({
+    ...config.socketOptions,
+    auth: { token }
+  });
   
   // Gestion des erreurs de connexion
   state.socket.on('connect_error', (err) => {
