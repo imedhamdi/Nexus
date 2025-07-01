@@ -1013,3 +1013,51 @@ button {
     from { opacity: 1; transform: translateX(0); }
     to { opacity: 0; transform: translateX(100%); }
 }
+
+/*
+===================================================================
+                        CORRECTIONS RESPONSIVE MOBILE
+===================================================================
+*/
+
+@media (max-width: 767px) {
+
+    /* --- En-tête de la conversation --- */
+    .chat-header .chat-partner {
+        display: flex;
+        flex-grow: 1;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .chat-partner-info {
+        flex-grow: 1;
+        min-width: 0;
+    }
+
+    .chat-partner-name {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .chat-partner-status span {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    /* --- Zone de saisie --- */
+    #chat-form .input-group {
+        flex-grow: 1;
+    }
+
+    #chat-form .action-btn,
+    #chat-form .ttl-select {
+        flex-shrink: 0;
+    }
+
+    #message-input {
+        width: 100%;
+    }
+}
