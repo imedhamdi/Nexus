@@ -41,6 +41,10 @@ const dom = {
   chatPartnerAvatar: document.getElementById('chat-partner-avatar'),
   chatPartnerName: document.getElementById('chat-partner-name'),
   chatPartnerStatus: document.getElementById('chat-partner-status-text'),
+  typingIndicatorContainer: document.getElementById('typing-indicator-container'),
+  callBtn: document.querySelector('.chat-action-btn.call'),
+  videoBtn: document.querySelector('.chat-action-btn.video'),
+  groupSettingsBtn: document.querySelector('.chat-action-btn.group-settings'),
   sendBtn: document.getElementById('send-btn'),
   replyPreview: document.getElementById('reply-preview'),
   replySnippet: document.getElementById('reply-snippet'),
@@ -398,12 +402,19 @@ function setupAppListeners() {
   });
   
   // Appels WebRTC
-  document.querySelector('.chat-action-btn.call').addEventListener('click', () => {
+  dom.callBtn.addEventListener('click', () => {
     startCall(false);
   });
-  
-  document.querySelector('.chat-action-btn.video').addEventListener('click', () => {
+
+  dom.videoBtn.addEventListener('click', () => {
     startCall(true);
+  });
+
+  dom.groupSettingsBtn.addEventListener('click', () => {
+    if (state.currentGroup) {
+      alert(`Gestion du groupe: ${state.currentGroup.name}`);
+      console.log('Membres:', state.currentGroup.members);
+    }
   });
   
   dom.hangupBtn.addEventListener('click', endCall);
@@ -569,6 +580,13 @@ async function selectChat(contact) {
   dom.chatPartnerAvatar.src = contact.avatar || 'https://i.pravatar.cc/150';
   dom.chatPartnerStatus.querySelector('span').textContent = contact.online ? 'En ligne' : 'Hors ligne';
   dom.chatPartnerStatus.querySelector('.status-dot').className = `status-dot ${contact.online ? 'online' : 'offline'}`;
+
+  dom.callBtn.classList.remove('hidden');
+  dom.videoBtn.classList.remove('hidden');
+  dom.groupSettingsBtn.classList.add('hidden');
+
+  state.typingUsers.clear();
+  updateTypingIndicator();
   
   // Charger les messages
   await loadMessages(contact.id);
@@ -600,6 +618,13 @@ async function selectGroup(group) {
   dom.chatPartnerAvatar.src = group.avatar || 'https://i.pravatar.cc/150';
   dom.chatPartnerStatus.querySelector('span').textContent = `${group.memberCount} membres`;
   dom.chatPartnerStatus.querySelector('.status-dot').className = 'status-dot';
+
+  dom.callBtn.classList.add('hidden');
+  dom.videoBtn.classList.add('hidden');
+  dom.groupSettingsBtn.classList.remove('hidden');
+
+  state.typingUsers.clear();
+  updateTypingIndicator();
   
   // Charger les messages
   await loadMessages(group.id, true);
@@ -619,7 +644,7 @@ async function selectGroup(group) {
  */
 async function loadMessages(partnerId, isGroup = false) {
   try {
-    const url = isGroup 
+    const url = isGroup
       ? `${config.apiBaseUrl}/api/groups/${partnerId}/messages`
       : `${config.apiBaseUrl}/api/messages?partner=${partnerId}`;
     
@@ -630,8 +655,19 @@ async function loadMessages(partnerId, isGroup = false) {
     });
     
     if (response.ok) {
-      const messages = await response.json();
-      state.messages = messages;
+      const data = await response.json();
+      if (isGroup) {
+        state.messages = data.messages;
+        if (state.currentGroup && state.currentGroup.id === data.group.id) {
+          Object.assign(state.currentGroup, {
+            members: data.group.members,
+            memberCount: data.group.memberCount,
+            createdBy: data.group.createdBy
+          });
+        }
+      } else {
+        state.messages = data;
+      }
       renderMessages();
       scrollToBottom();
     }
@@ -1060,7 +1096,7 @@ function handleReactionUpdated({ id, reactions }) {
  * Gère l'indicateur de frappe
  */
 function handleTyping({ sender }) {
-  if (state.currentChat && sender === state.currentChat.id) {
+  if (state.currentChat && sender === state.currentChat.username) {
     state.typingUsers.add(sender);
     updateTypingIndicator();
   }
@@ -1070,31 +1106,25 @@ function handleTyping({ sender }) {
  * Gère l'arrêt de l'indicateur de frappe
  */
 function handleStopTyping({ sender }) {
-  if (state.currentChat && sender === state.currentChat.id) {
-    state.typingUsers.delete(sender);
-    updateTypingIndicator();
-  }
+  state.typingUsers.delete(sender);
+  updateTypingIndicator();
 }
 
 /**
  * Met à jour l'indicateur de frappe dans l'interface
  */
 function updateTypingIndicator() {
-  const typingIndicator = document.querySelector('.typing-indicator');
-  
+  const partnerName = state.currentChat ? state.currentChat.name : 'Quelqu\'un';
   if (state.typingUsers.size > 0) {
-    if (!typingIndicator) {
-      const indicator = document.createElement('div');
-      indicator.className = 'typing-indicator';
-      indicator.innerHTML = `
-        <span class="status-dot typing"></span>
-        <span>${state.currentChat.name} est en train d'écrire...</span>
-      `;
-      dom.messagesContainer.appendChild(indicator);
-    }
-    scrollToBottom();
-  } else if (typingIndicator) {
-    typingIndicator.remove();
+    dom.typingIndicatorContainer.textContent = `${partnerName} est en train d'écrire...`;
+    dom.typingIndicatorContainer.classList.add('visible');
+    dom.typingIndicatorContainer.classList.remove('hidden');
+    dom.chatPartnerStatus.classList.add('hidden');
+  } else {
+    dom.typingIndicatorContainer.textContent = '';
+    dom.typingIndicatorContainer.classList.remove('visible');
+    dom.typingIndicatorContainer.classList.add('hidden');
+    dom.chatPartnerStatus.classList.remove('hidden');
   }
 }
 
@@ -1377,8 +1407,7 @@ function initPeerConnection() {
   state.peerConnection.onconnectionstatechange = () => {
     const stateStr = state.peerConnection.connectionState;
     if (stateStr === 'connected') {
-      dom.callPreviewContainer.style.display = 'none';
-      dom.callContainer.style.display = 'flex';
+      startCallComplete();
     } else if (stateStr === 'disconnected' || stateStr === 'failed' || stateStr === 'closed') {
       endCall();
     }
