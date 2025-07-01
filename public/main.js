@@ -74,6 +74,30 @@ const dom = {
   callSound: document.getElementById('call-sound')
 };
 
+/**
+ * Joue un élément audio avec une solution de secours utilisant Web Audio API
+ */
+function playAudio(element) {
+  if (!element) return;
+  const playPromise = element.play();
+  if (playPromise && playPromise.catch) {
+    playPromise.catch(() => {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.value = 440;
+        osc.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.2);
+        osc.onended = () => ctx.close();
+      } catch (err) {
+        console.error('Audio fallback error:', err);
+      }
+    });
+  }
+}
+
 // État de l'application
 const state = {
   currentUser: null,
@@ -922,7 +946,7 @@ function connectSocket() {
  */
 function handleNewMessage(message) {
   // Jouer le son de notification
-  dom.messageSound.play().catch(e => console.error('Erreur de lecture du son:', e));
+  playAudio(dom.messageSound);
   
   // Si le message est pour la conversation actuelle
   if (state.currentChat && message.sender === state.currentChat.username) {
@@ -949,7 +973,7 @@ function handleNewMessage(message) {
  * Gère la réception d'un nouveau message de groupe
  */
 function handleNewGroupMessage(message) {
-  dom.messageSound.play().catch(e => console.error('Erreur de lecture du son:', e));
+  playAudio(dom.messageSound);
   
   if (state.currentGroup && message.group === state.currentGroup.id) {
     state.messages.push(message);
@@ -1142,7 +1166,7 @@ function showIncomingCall(caller, callerName, callerAvatar, isVideo) {
   dom.toastContainer.appendChild(toast);
   
   // Jouer la sonnerie
-  dom.callSound.play().catch(e => console.error('Erreur de lecture du son:', e));
+  playAudio(dom.callSound);
   
   return toast;
 }
