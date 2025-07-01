@@ -56,6 +56,9 @@ const dom = {
   createGroupForm: document.getElementById('create-group-form'),
   attachBtn: document.getElementById('attach-btn'),
   fileInput: document.getElementById('file-input'),
+  contactsModal: document.getElementById('contacts-modal'),
+  closeContactsModal: document.getElementById('close-contacts-modal'),
+  modalContactsList: document.getElementById('modal-contacts-list'),
   contactsLink: document.getElementById('contacts-link'),
   settingsLink: document.getElementById('settings-link'),
   callContainer: document.getElementById('call-container'),
@@ -295,10 +298,23 @@ function setupAppListeners() {
     e.target.value = '';
   });
 
-  // Liens de navigation non implémentés
+  // Ouverture de la modale des contacts
   dom.contactsLink.addEventListener('click', (e) => {
     e.preventDefault();
-    showToast('Fonctionnalité à venir');
+    dom.contactsModal.classList.add('active');
+    dom.contactsModal.classList.remove('hidden');
+  });
+
+  dom.closeContactsModal.addEventListener('click', () => {
+    dom.contactsModal.classList.remove('active');
+    dom.contactsModal.classList.add('hidden');
+  });
+
+  dom.contactsModal.addEventListener('click', (e) => {
+    if (e.target === dom.contactsModal) {
+      dom.contactsModal.classList.remove('active');
+      dom.contactsModal.classList.add('hidden');
+    }
   });
 
   dom.settingsLink.addEventListener('click', (e) => {
@@ -435,7 +451,7 @@ async function loadContacts() {
     
     if (response.ok) {
       state.contacts = await response.json();
-      renderContacts();
+      renderContactsModal();
     }
   } catch (err) {
     console.error('Erreur de chargement des contacts:', err);
@@ -443,33 +459,49 @@ async function loadContacts() {
 }
 
 /**
- * Affiche la liste des contacts dans le DOM
+ * Affiche les conversations récentes dans la sidebar
+ * (à implémenter ultérieurement)
  */
-function renderContacts() {
-  dom.contactsList.innerHTML = '';
+function renderSidebarConversations() {
+  // Future implementation
+}
+
+function renderContactsModal() {
+  dom.modalContactsList.innerHTML = '';
+  if (!state.contacts || state.contacts.length === 0) {
+    dom.modalContactsList.innerHTML = '<p>Aucun contact trouvé.</p>';
+    return;
+  }
 
   state.contacts.forEach(contact => {
     const contactEl = document.createElement('div');
-    contactEl.className = 'contact';
-    if (state.currentChat && state.currentChat.id === contact.id) contactEl.classList.add('active');
+    contactEl.className = 'modal-contact-item';
     contactEl.dataset.id = contact.id;
+
     contactEl.innerHTML = `
-      <div class="contact-avatar">
-        <img src="${contact.avatar || 'https://i.pravatar.cc/150'}" alt="Avatar de ${contact.name}">
-        <span class="contact-status ${contact.online ? 'online' : 'offline'}"></span>
-      </div>
-      <div class="contact-info">
-        <div class="contact-name">${contact.name}</div>
-        <div class="contact-last-msg">${contact.lastMessage || ''}</div>
-      </div>
-      ${contact.unreadCount ? `<div class="unread-count">${contact.unreadCount}</div>` : ''}
+        <div class="contact-avatar">
+            <img src="${contact.avatar || 'https://i.pravatar.cc/150'}" alt="Avatar de ${contact.name}">
+        </div>
+        <div class="contact-info">
+            <div class="contact-name">${contact.name}</div>
+            <div class="contact-username">@${contact.username}</div>
+        </div>
+        <div class="contact-status-indicator">
+            <span class="status-dot ${contact.online ? 'online' : 'offline'}"></span>
+            <span>${contact.online ? 'En ligne' : 'Hors ligne'}</span>
+        </div>
     `;
-    
+
     contactEl.addEventListener('click', () => {
-      selectChat(contact);
+      const selectedContact = state.contacts.find(c => c.id === contact.id);
+      if (selectedContact) {
+        selectChat(selectedContact);
+        dom.contactsModal.classList.remove('active');
+        dom.contactsModal.classList.add('hidden');
+      }
     });
-    
-    dom.contactsList.appendChild(contactEl);
+
+    dom.modalContactsList.appendChild(contactEl);
   });
 }
 
@@ -530,9 +562,6 @@ async function selectChat(contact) {
   state.currentChat = contact;
   state.currentGroup = null;
 
-  document.querySelectorAll('#contacts-list .contact').forEach(c => c.classList.remove('active'));
-  const active = dom.contactsList.querySelector(`[data-id="${contact.id}"]`);
-  if (active) active.classList.add('active');
   document.querySelectorAll('#groups-list .contact').forEach(c => c.classList.remove('active'));
   
   // Mettre à jour l'interface
@@ -564,7 +593,7 @@ async function selectGroup(group) {
   document.querySelectorAll('#groups-list .contact').forEach(c => c.classList.remove('active'));
   const active = dom.groupsList.querySelector(`[data-id="${group.id}"]`);
   if (active) active.classList.add('active');
-  document.querySelectorAll('#contacts-list .contact').forEach(c => c.classList.remove('active'));
+
   
   // Mettre à jour l'interface
   dom.chatPartnerName.textContent = group.name;
@@ -961,7 +990,7 @@ function handleNewMessage(message) {
     const contact = state.contacts.find(c => c.username === message.sender);
     if (contact) {
       contact.unreadCount = (contact.unreadCount || 0) + 1;
-      renderContacts();
+      renderContactsModal();
     }
     
     // Afficher une notification
@@ -1085,7 +1114,7 @@ function handleUsersUpdated(usernames) {
     }
   }
   
-  renderContacts();
+  renderContactsModal();
 }
 
 /**
