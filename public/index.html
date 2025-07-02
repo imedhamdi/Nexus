@@ -16,6 +16,7 @@
                 <h3 id="username-display"></h3>
             </div>
             <div class="search-container"> <input type="text" placeholder="Rechercher..."> </div>
+            <button id="add-contact-btn">Ajouter un contact</button>
             <div class="conversations-list">
                 <div class="conversation-tabs"> <button class="active" id="private-tab">Privés</button> <button
                         id="group-tab">Groupes</button> </div>
@@ -100,6 +101,17 @@
                 <button id="accept-call"><i class="fas fa-phone"></i> Accepter</button>
                 <button id="reject-call"><i class="fas fa-phone-slash"></i> Refuser</button>
             </div>
+        </div>
+    </div>
+
+    <div id="add-contact-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2>Ajouter un contact</h2>
+            <input type="text" id="search-user-input" placeholder="Rechercher...">
+            <div id="search-results" class="search-results"></div>
+            <h3>Demandes reçues</h3>
+            <div id="pending-requests" class="search-results"></div>
+            <button id="close-add-contact">Fermer</button>
         </div>
     </div>
 

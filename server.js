@@ -49,13 +49,16 @@ type: String,
 required: true,
 maxlength: 50
 },
-avatar: {
-type: String
-},
-createdAt: {
-type: Date,
-default: Date.now
-}
+  avatar: {
+    type: String
+  },
+  contacts: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User', default: [] }],
+  pendingRequests: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User', default: [] }],
+  sentRequests: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User', default: [] }],
+  createdAt: {
+    type: Date,
+    default: Date.now
+  }
 });
 
 const GroupSchema = new mongoose.Schema({
@@ -720,35 +723,140 @@ app.get('/api/users/me', authenticate, async (req, res) => {
 res.send(req.user);
 });
 
-app.get('/api/users', authenticate, async (req, res) => {
-try {
-const users = await User.find({ _id: { $ne: req.user._id } }).lean();
-    // Enrich with last message and unread count
-    const enrichedUsers = await Promise.all(users.map(async user => {
+app.get('/api/contacts', authenticate, async (req, res) => {
+  try {
+    const contacts = await User.find({ _id: { $in: req.user.contacts } }).lean();
+    const enriched = await Promise.all(
+      contacts.map(async user => {
         const lastMessage = await Message.findOne({
-            $or: [
-                { sender: req.user._id, recipient: user._id },
-                { sender: user._id, recipient: req.user._id }
-            ]
+          $or: [
+            { sender: req.user._id, recipient: user._id },
+            { sender: user._id, recipient: req.user._id }
+          ]
         }).sort({ createdAt: -1 });
 
         const unreadCount = await Message.countDocuments({
-            sender: user._id,
-            recipient: req.user._id,
-            read: false
+          sender: user._id,
+          recipient: req.user._id,
+          read: false
         });
 
         return {
-            ...user,
-            lastMessage: lastMessage ? lastMessage.content : null,
-            unreadCount
+          ...user,
+          lastMessage: lastMessage ? lastMessage.content : null,
+          unreadCount
         };
+      })
+    );
+
+    res.send(enriched);
+  } catch (error) {
+    res.status(500).send({ error: error.message });
+  }
+});
+
+app.get('/api/users/search', authenticate, async (req, res) => {
+  try {
+    const query = req.query.username || '';
+    const regex = new RegExp(query, 'i');
+    const users = await User.find({ username: regex, _id: { $ne: req.user._id } })
+      .select('name username avatar')
+      .lean();
+
+    const result = users.map(u => ({
+      ...u,
+      isContact: req.user.contacts.some(id => id.toString() === u._id.toString()),
+      requestSent: req.user.sentRequests.some(id => id.toString() === u._id.toString()),
+      requestReceived: req.user.pendingRequests.some(id => id.toString() === u._id.toString())
     }));
 
-    res.send(enrichedUsers);
-} catch (error) {
+    res.send(result);
+  } catch (error) {
     res.status(500).send({ error: error.message });
-}
+  }
+});
+
+app.post('/api/contacts/request/:userId', authenticate, async (req, res) => {
+  try {
+    const target = await User.findById(req.params.userId);
+    if (!target) return res.status(404).send({ error: 'User not found' });
+    if (req.user.contacts.includes(target._id)) {
+      return res.status(400).send({ error: 'Already contacts' });
+    }
+    if (!req.user.sentRequests.includes(target._id)) {
+      req.user.sentRequests.push(target._id);
+    }
+    if (!target.pendingRequests.includes(req.user._id)) {
+      target.pendingRequests.push(req.user._id);
+    }
+    await req.user.save();
+    await target.save();
+    res.send({ success: true });
+  } catch (error) {
+    res.status(500).send({ error: error.message });
+  }
+});
+
+app.post('/api/contacts/accept/:userId', authenticate, async (req, res) => {
+  try {
+    const sender = await User.findById(req.params.userId);
+    if (!sender) return res.status(404).send({ error: 'User not found' });
+
+    req.user.pendingRequests = req.user.pendingRequests.filter(
+      id => id.toString() !== sender._id.toString()
+    );
+    sender.sentRequests = sender.sentRequests.filter(
+      id => id.toString() !== req.user._id.toString()
+    );
+
+    if (!req.user.contacts.includes(sender._id)) req.user.contacts.push(sender._id);
+    if (!sender.contacts.includes(req.user._id)) sender.contacts.push(req.user._id);
+
+    await req.user.save();
+    await sender.save();
+    res.send({ success: true });
+  } catch (error) {
+    res.status(500).send({ error: error.message });
+  }
+});
+
+app.post('/api/contacts/decline/:userId', authenticate, async (req, res) => {
+  try {
+    const sender = await User.findById(req.params.userId);
+    if (!sender) return res.status(404).send({ error: 'User not found' });
+
+    req.user.pendingRequests = req.user.pendingRequests.filter(
+      id => id.toString() !== sender._id.toString()
+    );
+    sender.sentRequests = sender.sentRequests.filter(
+      id => id.toString() !== req.user._id.toString()
+    );
+
+    await req.user.save();
+    await sender.save();
+    res.send({ success: true });
+  } catch (error) {
+    res.status(500).send({ error: error.message });
+  }
+});
+
+app.delete('/api/contacts/:userId', authenticate, async (req, res) => {
+  try {
+    const target = await User.findById(req.params.userId);
+    if (!target) return res.status(404).send({ error: 'User not found' });
+
+    req.user.contacts = req.user.contacts.filter(
+      id => id.toString() !== target._id.toString()
+    );
+    target.contacts = target.contacts.filter(
+      id => id.toString() !== req.user._id.toString()
+    );
+    await req.user.save();
+    await target.save();
+    res.send({ success: true });
+  } catch (error) {
+    res.status(500).send({ error: error.message });
+  }
 });
 
 app.post('/api/upload-file', authenticate, upload.single('file'), async (req, res) => {
@@ -872,11 +980,15 @@ return res.status(404).send({ error: 'Group not found' });
 });
 
 app.get('/api/messages', authenticate, async (req, res) => {
-try {
-const partner = req.query.partner;
-if (!partner) {
-return res.status(400).send({ error: 'Partner ID is required' });
-}
+  try {
+    const partner = req.query.partner;
+    if (!partner) {
+      return res.status(400).send({ error: 'Partner ID is required' });
+    }
+
+    if (!req.user.contacts.map(id => id.toString()).includes(partner)) {
+      return res.status(403).send({ error: 'Not a contact' });
+    }
     const messages = await Message.find({
         $or: [
             { sender: req.user._id, recipient: partner },
