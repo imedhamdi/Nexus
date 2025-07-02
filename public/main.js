@@ -210,6 +210,23 @@ class NexusChat {
     document.getElementById('cancel-reply').addEventListener('click', () => {
       this.cancelReply();
     });
+
+    // Add contact modal
+    document.getElementById('add-contact-btn').addEventListener('click', () => {
+      document.getElementById('add-contact-modal').classList.add('active');
+      this.loadPendingRequests();
+      this.searchUsers('');
+    });
+
+    document.getElementById('close-add-contact').addEventListener('click', () => {
+      document.getElementById('add-contact-modal').classList.remove('active');
+    });
+
+    document
+      .getElementById('search-user-input')
+      .addEventListener('input', (e) => {
+        this.searchUsers(e.target.value);
+      });
   }
 
   setupUI() {
@@ -227,7 +244,7 @@ class NexusChat {
   async loadConversations() {
     try {
       // Load private conversations
-      const privateResponse = await fetch('/api/users', {
+      const privateResponse = await fetch('/api/contacts', {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('nexus_chat_token')}`
         }
@@ -1000,6 +1017,114 @@ class NexusChat {
         document.getElementById('local-video').style.display = videoTrack.enabled ? 'block' : 'none';
       }
     }
+  }
+
+  async searchUsers(query) {
+    try {
+      const response = await fetch(`/api/users/search?username=${encodeURIComponent(query)}`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('nexus_chat_token')}`
+        }
+      });
+      if (response.ok) {
+        const users = await response.json();
+        this.renderSearchResults(users);
+      }
+    } catch (e) {
+      console.error('search error', e);
+    }
+  }
+
+  renderSearchResults(users) {
+    const container = document.getElementById('search-results');
+    container.innerHTML = '';
+    users.forEach(u => {
+      const item = document.createElement('div');
+      item.className = 'add-contact-item';
+      let buttonHtml = '';
+      if (u.isContact) {
+        buttonHtml = '<button disabled>Déjà ami</button>';
+      } else if (u.requestReceived) {
+        buttonHtml = `<button data-action="accept" data-id="${u._id}">Accepter</button>`;
+      } else if (u.requestSent) {
+        buttonHtml = '<button disabled>Demande envoyée</button>';
+      } else {
+        buttonHtml = `<button data-action="add" data-id="${u._id}">Ajouter</button>`;
+      }
+      item.innerHTML = `<span>${u.username}</span>${buttonHtml}`;
+      container.appendChild(item);
+    });
+
+    container.querySelectorAll('button[data-action="add"]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.sendContactRequest(btn.dataset.id);
+      });
+    });
+    container.querySelectorAll('button[data-action="accept"]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.acceptContactRequest(btn.dataset.id);
+      });
+    });
+  }
+
+  loadPendingRequests() {
+    const container = document.getElementById('pending-requests');
+    container.innerHTML = '';
+    if (!this.currentUser.pendingRequests) return;
+    this.currentUser.pendingRequests.forEach(id => {
+      const div = document.createElement('div');
+      div.className = 'add-contact-item';
+      div.innerHTML = `<span>${id}</span> <button data-id="${id}" class="accept">Accepter</button> <button data-id="${id}" class="decline">Refuser</button>`;
+      container.appendChild(div);
+    });
+    container.querySelectorAll('.accept').forEach(btn => {
+      btn.addEventListener('click', () => this.acceptContactRequest(btn.dataset.id));
+    });
+    container.querySelectorAll('.decline').forEach(btn => {
+      btn.addEventListener('click', () => this.declineContactRequest(btn.dataset.id));
+    });
+  }
+
+  async sendContactRequest(id) {
+    await fetch(`/api/contacts/request/${id}`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('nexus_chat_token')}`
+      }
+    });
+    if (!this.currentUser.sentRequests) this.currentUser.sentRequests = [];
+    if (!this.currentUser.sentRequests.includes(id)) this.currentUser.sentRequests.push(id);
+    this.searchUsers(document.getElementById('search-user-input').value);
+  }
+
+  async acceptContactRequest(id) {
+    await fetch(`/api/contacts/accept/${id}`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('nexus_chat_token')}`
+      }
+    });
+    this.loadConversations();
+    const index = this.currentUser.pendingRequests.indexOf(id);
+    if (index !== -1) this.currentUser.pendingRequests.splice(index, 1);
+    if (!this.currentUser.contacts.includes(id)) {
+      this.currentUser.contacts.push(id);
+    }
+    this.loadPendingRequests();
+    this.searchUsers(document.getElementById('search-user-input').value);
+  }
+
+  async declineContactRequest(id) {
+    await fetch(`/api/contacts/decline/${id}`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('nexus_chat_token')}`
+      }
+    });
+    const index = this.currentUser.pendingRequests.indexOf(id);
+    if (index !== -1) this.currentUser.pendingRequests.splice(index, 1);
+    this.loadPendingRequests();
+    this.searchUsers(document.getElementById('search-user-input').value);
   }
   }
 
