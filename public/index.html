@@ -1,299 +1,115 @@
 <!DOCTYPE html>
-<html lang="fr" class="dark-theme">
+<html lang="fr">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Nexus - Secure Private Chat</title>
-    <meta name="description" content="A secure, private messaging application">
-    
-    <!-- Fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+    <title>Nexus Chat</title>
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
+
 <body>
-    <!-- Authentication Screens -->
-    <div id="auth-container" class="auth-container">
-        <!-- Login Card -->
-        <div id="login-card" class="auth-card">
-            <h1 class="auth-title">Connexion à Nexus</h1>
-            <form id="login-form" class="auth-form">
-                <div class="form-group">
-                    <input type="text" id="login-username" class="form-input" placeholder=" " required autocomplete="username">
-                    <label for="login-username" class="form-label">Nom d'utilisateur</label>
+    <div class="app-container">
+        <div class="sidebar">
+            <div class="user-profile"> <img id="user-avatar" src="" alt="Avatar">
+                <h3 id="username-display"></h3>
+            </div>
+            <div class="search-container"> <input type="text" placeholder="Rechercher..."> </div>
+            <div class="conversations-list">
+                <div class="conversation-tabs"> <button class="active" id="private-tab">Privés</button> <button
+                        id="group-tab">Groupes</button> </div>
+                <div id="private-conversations" class="conversations"> <!-- Conversations privées dynamiques --> </div>
+                <div id="group-conversations" class="conversations hidden"> <!-- Conversations de groupe dynamiques -->
                 </div>
-                <div class="form-group">
-                    <input type="password" id="login-password" class="form-input" placeholder=" " required autocomplete="current-password">
-                    <label for="login-password" class="form-label">Mot de passe</label>
-                </div>
-                <button type="submit" class="auth-btn" id="login-btn">Se connecter</button>
-            </form>
-            <p class="auth-link">Pas de compte ? <a href="#" id="show-register">Créer un compte</a></p>
+            </div>
         </div>
-        
-        <!-- Registration Card -->
-        <div id="register-card" class="auth-card hidden">
-            <h1 class="auth-title">Créer un compte</h1>
-            <form id="register-form" class="auth-form">
+        <div class="main-content">
+            <div class="chat-header">
+                <div class="chat-info"> <img id="chat-avatar" src="" alt="Chat Avatar">
+                    <h2 id="chat-name">Nexus Chat</h2> <span id="chat-status"></span>
+                </div>
+                <div class="chat-actions"> <button id="audio-call-btn" class="hidden"><i
+                            class="fas fa-phone"></i></button> <button id="video-call-btn" class="hidden"><i
+                            class="fas fa-video"></i></button> </div>
+            </div>
+            <div class="chat-container">
+                <div id="welcome-screen" class="welcome-screen">
+                    <h1>Bienvenue sur Nexus Chat</h1>
+                    <p>Sélectionnez une conversation pour commencer</p>
+                </div>
+                <div id="messages-container" class="messages-container hidden"> <!-- Messages dynamiques --> </div>
+            </div>
+            <div class="message-input-container hidden">
+                <div id="reply-preview" class="reply-preview hidden"> <span class="reply-content"></span> <button
+                        id="cancel-reply"><i class="fas fa-times"></i></button> </div>
+                <div class="input-wrapper"> <textarea id="message-input" placeholder="Écrivez un message..."></textarea>
+                    <button id="send-message"><i class="fas fa-paper-plane"></i></button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- Modals -->
+    <div id="login-modal" class="modal">
+        <div class="modal-content">
+            <h2>Connexion</h2>
+            <form id="login-form">
+                <input type="text" id="login-username" placeholder="Nom d'utilisateur" required>
+                <input type="password" id="login-password" placeholder="Mot de passe" required>
+                <button type="submit">Se connecter</button>
+            </form>
+            <p>Pas de compte? <a href="#" id="show-register">S'inscrire</a></p>
+        </div>
+    </div>
+
+    <div id="register-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2>Inscription</h2>
+            <form id="register-form">
+                <input type="text" id="register-name" placeholder="Nom complet" required>
+                <input type="text" id="register-username" placeholder="Nom d'utilisateur" required>
+                <input type="password" id="register-password" placeholder="Mot de passe" required>
                 <div class="avatar-upload">
-                    <img id="avatar-preview" class="avatar-preview" src="https://i.pravatar.cc/150" alt="Avatar preview">
-                    <label for="avatar-input" class="avatar-upload-label">Choisir une photo</label>
-                    <input type="file" id="avatar-input" accept="image/*" class="hidden">
+                    <label for="avatar-upload">Avatar (optionnel)</label>
+                    <input type="file" id="avatar-upload" accept="image/*">
+                    <div id="avatar-preview" class="avatar-preview"></div>
                 </div>
-                <div class="form-group">
-                    <input type="text" id="register-name" class="form-input" placeholder=" " required>
-                    <label for="register-name" class="form-label">Votre nom</label>
-                </div>
-                <div class="form-group">
-                    <input type="text" id="register-username" class="form-input" placeholder=" " required autocomplete="username">
-                    <label for="register-username" class="form-label">Nom d'utilisateur</label>
-                </div>
-                <div class="form-group">
-                    <input type="password" id="register-password" class="form-input" placeholder=" " required autocomplete="new-password">
-                    <label for="register-password" class="form-label">Mot de passe</label>
-                </div>
-                <button type="submit" class="auth-btn" id="register-btn">S'inscrire</button>
+                <button type="submit">S'inscrire</button>
             </form>
-            <p class="auth-link">Déjà un compte ? <a href="#" id="show-login">Se connecter</a></p>
+            <p>Déjà inscrit? <a href="#" id="show-login">Se connecter</a></p>
         </div>
     </div>
-    
-    <!-- Main Application -->
-    <div id="app-container" class="hidden">
-        <!-- Sidebar -->
-        <aside class="sidebar" aria-label="Navigation principale">
-            <div class="sidebar-header">
-                <h2 class="sidebar-title">Nexus Chat</h2>
-                <button class="sidebar-close-btn" aria-label="Fermer la sidebar">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-            
-            <!-- User Profile -->
-            <div class="user-profile">
-                <img id="user-avatar" class="user-avatar" src="https://i.pravatar.cc/150" alt="Votre avatar">
-                <div class="user-info">
-                    <div id="user-name" class="user-name">Chargement...</div>
-                    <div id="user-username" class="user-username">@utilisateur</div>
-                    <div class="user-status">
-                        <span class="status-dot"></span>
-                        <span>En ligne</span>
-                    </div>
-                </div>
-            </div>
 
-            <div class="sidebar-search-container">
-                <i class="fas fa-search"></i>
-                <input type="search" id="sidebar-search" placeholder="Rechercher...">
+    <div id="call-modal" class="modal hidden">
+        <div class="modal-content call-content">
+            <video id="remote-video" autoplay></video>
+            <video id="local-video" autoplay muted></video>
+            <div class="call-controls">
+                <button id="end-call"><i class="fas fa-phone-slash"></i></button>
+                <button id="toggle-mic"><i class="fas fa-microphone"></i></button>
+                <button id="toggle-camera"><i class="fas fa-video"></i></button>
             </div>
-            
-            <!-- Navigation -->
-            <nav class="sidebar-nav" aria-label="Navigation secondaire">
-                <a href="#" class="nav-item active" aria-current="page">
-                    <i class="fas fa-comment-alt" aria-hidden="true"></i>
-                    <span>Messages</span>
-                </a>
-                <a href="#" id="contacts-link" class="nav-item">
-                    <i class="fas fa-user-friends" aria-hidden="true"></i>
-                    <span>Contacts</span>
-                </a>
-                <a href="#" id="settings-link" class="nav-item">
-                    <i class="fas fa-cog" aria-hidden="true"></i>
-                    <span>Paramètres</span>
-                </a>
-                <button id="new-group-btn" class="nav-item">
-                    <i class="fas fa-users" aria-hidden="true"></i>
-                    <span>Nouveau groupe</span>
-                </button>
-                <a href="#" id="logout-btn" class="nav-item">
-                    <i class="fas fa-sign-out-alt" aria-hidden="true"></i>
-                    <span>Déconnexion</span>
-                </a>
-            </nav>
-            
-            <!-- Groups and Contacts -->
-            <div class="sidebar-lists">
-                <h3 class="list-title">Discussions</h3>
-                <div class="contacts-list" id="private-chats-list" role="list"></div>
-
-                <h3 class="list-title">Groupes</h3>
-                <div class="contacts-list" id="groups-list" role="list"></div>
-            </div>
-        </aside>
-        
-        <!-- Sidebar Overlay (Mobile) -->
-        <div class="sidebar-overlay"></div>
-        
-        <!-- Main Chat Area -->
-        <main class="chat-area">
-            <!-- Chat Header -->
-            <header class="chat-header">
-                <button class="menu-btn" aria-label="Ouvrir le menu">
-                    <i class="fas fa-bars"></i>
-                </button>
-                
-                <div class="chat-partner">
-                    <div class="chat-partner-avatar">
-                        <img id="chat-partner-avatar" src="https://i.pravatar.cc/150?img=1" alt="Avatar de Jean">
-                        <span id="chat-partner-status" class="contact-status online"></span>
-                    </div>
-                    <div class="chat-partner-info">
-                        <div id="chat-partner-name" class="chat-partner-name">Jean Dupont</div>
-                        <div id="chat-partner-status-text" class="chat-partner-status">
-                            <span class="status-dot online"></span>
-                            <span>En ligne</span>
-                        </div>
-                        <div id="typing-indicator-container" class="typing-indicator-container"></div>
-                    </div>
-                </div>
-
-                <div class="chat-actions">
-                    <button class="chat-action-btn group-settings hidden" aria-label="Gérer le groupe">
-                        <i class="fas fa-users-cog"></i>
-                    </button>
-                    <button class="chat-action-btn call" aria-label="Appeler">
-                        <i class="fas fa-phone-alt"></i>
-                    </button>
-                    <button class="chat-action-btn video" aria-label="Appel vidéo">
-                        <i class="fas fa-video"></i>
-                    </button>
-                </div>
-            </header>
-
-            <div id="welcome-screen" class="welcome-screen">
-                <i class="fas fa-comments welcome-icon"></i>
-                <h2>Bienvenue sur Nexus Chat</h2>
-                <p>Sélectionnez une discussion pour commencer à discuter.</p>
-            </div>
-
-            <div id="loading-spinner" class="loading-spinner hidden"></div>
-            
-            <!-- Messages Container -->
-            <section id="messages-container" class="messages-container" aria-live="polite">
-                <!-- Messages will be dynamically added here -->
-            </section>
-            
-            <!-- Chat Input Area -->
-            <footer class="chat-input-area">
-                <form id="chat-form" class="chat-form">
-                    <button type="button" class="action-btn" id="attach-btn" aria-label="Joindre un fichier">
-                        <i class="fas fa-paperclip"></i>
-                    </button>
-                    <input type="file" id="file-input" class="hidden" accept="image/*,.pdf,.doc,.docx">
-                    
-                    <div class="input-group">
-                        <div id="reply-preview" class="reply-preview hidden">
-                            <div class="reply-preview-content" id="reply-snippet"></div>
-                            <button type="button" class="cancel-reply" id="cancel-reply" aria-label="Annuler la réponse">
-                                <i class="fas fa-times"></i>
-                            </button>
-                        </div>
-                        
-                        <textarea id="message-input" class="message-input" placeholder="Écrivez un message..." rows="1" aria-label="Message"></textarea>
-                    </div>
-                    
-                    <select id="ttl-select" class="ttl-select" aria-label="Durée de vie du message">
-                        <option value="">∞</option>
-                        <option value="5000">5s</option>
-                        <option value="60000">1m</option>
-                        <option value="3600000">1h</option>
-                    </select>
-                    
-                    <button type="submit" class="action-btn send-btn" id="send-btn" disabled aria-label="Envoyer le message">
-                        <i class="fas fa-paper-plane"></i>
-                    </button>
-                </form>
-            </footer>
-        </main>
-    </div>
-    
-    <!-- Call UI -->
-    <div id="call-preview-container" class="call-ui hidden">
-        <video id="preview-video" autoplay muted playsinline aria-hidden="true"></video>
-        <div class="call-info">
-            <div class="call-name" id="call-partner-name">Préparation de l'appel</div>
-            <div class="call-status" id="call-status">Chargement de votre caméra...</div>
-        </div>
-        <div class="call-controls">
-            <button class="control-btn hangup" id="hangup-preview-btn" aria-label="Raccrocher">
-                <i class="fas fa-phone"></i>
-            </button>
         </div>
     </div>
-    
-    <div id="call-container" class="call-ui hidden">
-        <video id="remote-video" autoplay playsinline aria-label="Vidéo de votre contact"></video>
-        <video id="local-video" autoplay muted playsinline aria-label="Votre vidéo"></video>
-        <div class="call-info">
-            <div class="call-name" id="call-partner-name">Jean Dupont</div>
-            <div class="call-status" id="call-status">Appel en cours...</div>
-        </div>
-        <div class="call-controls">
-            <button class="control-btn" id="mute-btn" aria-label="Couper le micro">
-                <i class="fas fa-microphone"></i>
-            </button>
-            <button class="control-btn" id="video-btn" aria-label="Couper la caméra">
-                <i class="fas fa-video"></i>
-            </button>
-            <button class="control-btn hangup" id="hangup-btn" aria-label="Raccrocher">
-                <i class="fas fa-phone"></i>
-            </button>
-        </div>
-    </div>
-    
-    <!-- Group Creation Modal -->
-    <div id="group-modal" class="modal-overlay hidden">
+
+    <div id="incoming-call-modal" class="modal hidden">
         <div class="modal-content">
-            <div class="modal-header">
-                <h3 class="modal-title">Créer un groupe</h3>
-                <button class="modal-close" id="close-group-modal" aria-label="Fermer">
-                    <i class="fas fa-times"></i>
-                </button>
+            <h2>Appel entrant</h2>
+            <p id="caller-name"></p>
+            <div class="call-buttons">
+                <button id="accept-call"><i class="fas fa-phone"></i> Accepter</button>
+                <button id="reject-call"><i class="fas fa-phone-slash"></i> Refuser</button>
             </div>
-            
-            <form id="create-group-form" class="auth-form">
-                <div class="form-group">
-                    <input type="text" id="group-name" class="form-input" placeholder=" " required>
-                    <label for="group-name" class="form-label">Nom du groupe</label>
-                </div>
-                <div class="form-group">
-                    <input type="text" id="group-avatar" class="form-input" placeholder=" ">
-                    <label for="group-avatar" class="form-label">URL de l'avatar (optionnel)</label>
-                </div>
-                <div class="form-group">
-                    <textarea id="group-members" class="form-input" placeholder=" " rows="3"></textarea>
-                    <label for="group-members" class="form-label">Membres (séparés par des virgules)</label>
-                </div>
-                <button type="submit" class="auth-btn">Créer le groupe</button>
-            </form>
         </div>
     </div>
 
-    <div id="contacts-modal" class="modal-overlay hidden">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3 class="modal-title">Tous les contacts</h3>
-                <button class="modal-close" id="close-contacts-modal" aria-label="Fermer">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-            <div id="modal-contacts-list" class="modal-contacts-list">
-                <!-- Contacts will be dynamically added here -->
-            </div>
-        </div>
-    </div>
-    
-    <!-- Toast Container -->
-    <div id="toast-container" class="toast-container"></div>
-    
-    <!-- Audio Elements -->
-    <audio id="message-sound" src="https://assets.mixkit.co/sfx/preview/mixkit-software-interface-start-2574.mp3" preload="auto" crossorigin="anonymous"></audio>
-    <audio id="call-sound" src="https://assets.mixkit.co/sfx/preview/mixkit-waiting-ringtone-1354.mp3" loop preload="auto" crossorigin="anonymous"></audio>
-    
-    <!-- Socket.io -->
+    <audio id="message-sound" src="https://assets.mixkit.co/sfx/preview/mixkit-software-interface-start-2574.mp3"
+        preload="auto"></audio>
+    <audio id="call-sound" src="https://assets.mixkit.co/sfx/preview/mixkit-waiting-ringtone-1354.mp3"
+        preload="auto"></audio>
+
     <script src="/socket.io/socket.io.js"></script>
-    <script src="main.js" defer></script>
+    <script src="main.js"></script>
 </body>
+
 </html>
