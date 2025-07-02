@@ -809,9 +809,43 @@ function renderMessages() {
     }
     
     const messageEl = document.createElement('div');
-    messageEl.className = `message ${message.sender === state.currentUser.username ? 'sent' : 'received'}`;
+    const isSent = message.sender === state.currentUser.username;
+    messageEl.className = `message ${isSent ? 'sent' : 'received'}`;
     messageEl.setAttribute('role', 'listitem');
     messageEl.dataset.id = message.id;
+
+    // --- GROUPEMENT DES MESSAGES ---
+    let isGroupStart = true;
+    let isGroupEnd = true;
+    const prevMessage = state.messages[index - 1];
+    const nextMessage = state.messages[index + 1];
+    const FIVE_MINUTES = 5 * 60 * 1000;
+
+    if (prevMessage &&
+        prevMessage.sender === message.sender &&
+        !prevMessage.deleted &&
+        (new Date(message.createdAt) - new Date(prevMessage.createdAt)) < FIVE_MINUTES) {
+      const prevDate = new Date(prevMessage.createdAt).toDateString();
+      const currentDateStr = new Date(message.createdAt).toDateString();
+      if (prevDate === currentDateStr) {
+        isGroupStart = false;
+      }
+    }
+
+    if (nextMessage &&
+        nextMessage.sender === message.sender &&
+        !nextMessage.deleted &&
+        (new Date(nextMessage.createdAt) - new Date(message.createdAt)) < FIVE_MINUTES) {
+      const nextDate = new Date(nextMessage.createdAt).toDateString();
+      const currentDateStr = new Date(message.createdAt).toDateString();
+      if (nextDate === currentDateStr) {
+        isGroupEnd = false;
+      }
+    }
+
+    if (!isGroupStart) messageEl.classList.add('group-middle');
+    if (isGroupStart) messageEl.classList.add('group-start');
+    if (isGroupEnd) messageEl.classList.add('group-end');
     
     let contentHTML = '';
     if (message.deleted) {
@@ -851,17 +885,35 @@ function renderMessages() {
           return `<span class="reaction ${userReacted ? 'user-reacted' : ''}" data-emoji="${emoji}">${emoji} ${users.length}</span>`;
         })
         .join('');
-      
+
       contentHTML += `<div class="reactions">${reactionsHTML}</div>`;
     }
-    
+
+    let avatarUrl = '';
+    let senderName = message.sender;
+    if (isSent) {
+      avatarUrl = state.currentUser.avatar || 'https://i.pravatar.cc/150';
+      senderName = state.currentUser.name || state.currentUser.username;
+    } else if (state.currentChat) {
+      avatarUrl = state.currentChat.avatar || 'https://i.pravatar.cc/150';
+      senderName = state.currentChat.name || state.currentChat.username;
+    } else if (state.currentGroup && state.currentGroup.members) {
+      const member = state.currentGroup.members.find(m => m.username === message.sender);
+      if (member) {
+        avatarUrl = member.avatar || 'https://i.pravatar.cc/150';
+        senderName = member.name || member.username;
+      }
+    }
+
     messageEl.innerHTML = `
+      ${!isSent ? `<img src="${avatarUrl}" alt="Avatar de ${senderName}" class="message-avatar">` : ''}
       <div class="message-wrapper">
+        ${!isSent && isGroupStart && state.currentGroup ? `<div class="message-sender">${senderName}</div>` : ''}
         ${contentHTML}
         <div class="message-info">
           <span class="timestamp">${formatTime(message.createdAt)}</span>
           ${message.edited ? '<span class="edited">(modifié)</span>' : ''}
-          ${message.sender === state.currentUser.username ? `<i class="fas fa-check read-receipt ${message.read ? 'read' : ''}"></i>` : ''}
+          ${isSent ? `<i class="fas fa-check read-receipt ${message.read ? 'read' : ''}"></i>` : ''}
         </div>
       </div>
     `;
